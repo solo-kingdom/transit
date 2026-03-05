@@ -1,12 +1,14 @@
 version: '3.8'
 
 services:
-  # 后端服务（单一服务，监听 8000 端口）
+  # 文件中转服务（包含 transit 和 caddy）
   transit:
     build: .
     container_name: transit
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"   # Caddy 写端口（仅 POST/PUT）
+      - "8001:8001"   # Caddy 读端口（仅 GET/HEAD）
+      - "8080:8080"   # 读写端口（同时支持读写）
     volumes:
       - ./data:/app/data
     environment:
@@ -21,33 +23,11 @@ services:
       # - DOWNLOAD_HOST=example.com
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
-    networks:
-      - transit-network
-
-  # Caddy 反向代理 - 读写分离
-  caddy:
-    image: caddy:2-alpine
-    container_name: transit-caddy
-    ports:
-      - "8000:8000"   # 写端口（仅 POST/PUT）
-      - "8001:8001"   # 读端口（仅 GET/HEAD）
-      # - "80:80"     # 可选：标准 HTTP 端口（同时支持读写）
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    depends_on:
-      - transit
-    restart: unless-stopped
-    networks:
-      - transit-network
-
-networks:
-  transit-network:
-    driver: bridge
 
 volumes:
   data:

@@ -43,7 +43,7 @@
     }
     
     # 转发到后端服务
-    reverse_proxy transit:8000
+    reverse_proxy 127.0.0.1:8000
 }
 
 # 读端口（8001）- 仅允许 GET 和 HEAD 方法
@@ -61,7 +61,13 @@
     }
     
     # 转发到后端服务
-    reverse_proxy transit:8000
+    reverse_proxy 127.0.0.1:8000
+}
+
+# 读写端口（8080）- 同时支持读写
+:8080 {
+    # 允许所有方法
+    reverse_proxy 127.0.0.1:8000
 }
 
 # 可选：标准 HTTP 端口配置（同时支持读写）

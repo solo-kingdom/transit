@@ -47,8 +47,8 @@ class Settings(BaseSettings):
     # 服务端口（单一端口，读写分离由反向代理控制）
     port: int = 8000
 
-    # 文件大小限制（字节），默认 100MB
-    max_file_size: int = 100 * 1024 * 1024
+    # 文件大小限制（字节），默认 5GB
+    max_file_size: int = 5 * 1024 * 1024 * 1024
 
     # 安全配置
     remove_exec_permission: bool = True
