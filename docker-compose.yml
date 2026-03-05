@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # 文件中转服务（包含 transit 和 caddy）
+  transit:
+    build: .
+    container_name: transit
+    ports:
+      - "8000:8000"   # Caddy 写端口（仅 POST/PUT）
+      - "8001:8001"   # Caddy 读端口（仅 GET/HEAD）
+      - "8080:8080"   # 读写端口（同时支持读写）
+    volumes:
+      - ./data:/app/data
+    environment:
+      - APP_NAME=File Transit Service
+      - DATA_DIR=/app/data
+      - PORT=8000
+      # 认证配置（可选）
+      # - AUTH_ENABLED=true
+      # - READ_TOKENS=read123,read456
+      # - WRITE_TOKENS=write123,write456
+      # 下载 Host 配置（可选，不设置则自动检测）
+      # - DOWNLOAD_HOST=example.com
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  data:
