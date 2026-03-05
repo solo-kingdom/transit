@@ -37,9 +37,8 @@ fastapi dev src/transit/main.py
 ```bash
 # 上传文件
 curl --upload-file myfile.txt http://localhost:8000/username
-
-# 返回示例
-{"message":"File uploaded successfully","download_path":"/username/AbCdEf123456","filename":"AbCdEf123456"}
+# 返回示例（简化）
+{"message":"File uploaded successfully","download_path":"/username/AbCdEf123456","filename":"AbCdEf123456","original_filename":"myfile.txt","encoded_filename":"AbCdEf123456"}
 ```
 
 ### 方式 2: 使用 curl POST 方法
@@ -79,8 +78,8 @@ print(response.json())
 ### 方式 1: 使用 wget（推荐）
 
 ```bash
-# 下载文件
-wget http://localhost:8000/username/AbCdEf123456
+# 下载文件（自动使用原始文件名，需要 wget 支持 Content-Disposition）
+wget --content-disposition http://localhost:8000/username/AbCdEf123456
 
 # 或指定输出文件名
 wget -O downloaded_file.txt http://localhost:8000/username/AbCdEf123456
@@ -89,10 +88,12 @@ wget -O downloaded_file.txt http://localhost:8000/username/AbCdEf123456
 ### 方式 2: 使用 curl
 
 ```bash
-# 下载文件
-curl -O http://localhost:8000/username/AbCdEf123456
+# 下载文件并使用服务器返回的原始文件名
+# -O: 使用远程文件名保存
+# -J: 使用 Content-Disposition 中的文件名（这里会是原始文件名）
+curl -OJ http://localhost:8000/username/AbCdEf123456
 
-# 或指定输出文件名
+# 或手动指定输出文件名
 curl -o downloaded_file.txt http://localhost:8000/username/AbCdEf123456
 ```
 

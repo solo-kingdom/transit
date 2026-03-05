@@ -137,11 +137,16 @@ async def _upload_file_post(
         # 构造下载 URL（完整 URL）
         download_url = f"{get_download_base_url(request)}/{username}/{encoded_filename}"
 
+        # 返回包含原始文件名和编码文件名的信息
         return {
             "message": "File uploaded successfully",
             "download_url": download_url,
             "download_path": f"/{username}/{encoded_filename}",
+            # 保持向后兼容：filename 仍然是编码后的文件名
             "filename": encoded_filename,
+            # 显式提供编码后的文件名和原始文件名
+            "encoded_filename": encoded_filename,
+            "original_filename": meta.original_filename,
             "meta": meta.model_dump(mode="json"),
         }
 
@@ -197,6 +202,7 @@ async def _upload_file_put(
     request: Request,
     username: str,
     token: Optional[str],
+    filename_from_path: Optional[str] = None,
 ):
     """
     PUT 上传文件的实际处理逻辑
@@ -205,6 +211,7 @@ async def _upload_file_put(
         request: 请求对象
         username: 用户名
         token: 认证 token（如果启用认证）
+        filename_from_path: 从 URL 路径中提取的文件名（可选）
 
     Returns:
         包含完整下载 URL 的响应
@@ -216,15 +223,26 @@ async def _upload_file_put(
         # 读取原始文件内容
         content = await request.body()
 
-        # 从请求头获取文件名（如果有）
-        content_disposition = request.headers.get("content-disposition", "")
-        original_filename = "unnamed"
+        # 确定原始文件名（优先级：路径 > Content-Disposition > 基于时间戳）
+        original_filename = None
 
-        # 尝试从 Content-Disposition 提取文件名
-        if "filename=" in content_disposition:
-            parts = content_disposition.split("filename=")
-            if len(parts) > 1:
-                original_filename = parts[1].strip("\"'")
+        # 1. 优先使用 URL 路径中的文件名
+        if filename_from_path:
+            original_filename = filename_from_path
+        else:
+            # 2. 尝试从 Content-Disposition 头获取文件名
+            content_disposition = request.headers.get("content-disposition", "")
+            if "filename=" in content_disposition:
+                parts = content_disposition.split("filename=")
+                if len(parts) > 1:
+                    original_filename = parts[1].strip("\"'")
+
+            # 3. 如果仍然没有文件名，使用基于时间戳的默认文件名
+            if not original_filename or original_filename == "unnamed":
+                from datetime import datetime
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                original_filename = f"file_{timestamp}"
 
         # 获取客户端 IP
         remote_address = get_client_ip(request)
@@ -240,13 +258,26 @@ async def _upload_file_put(
         # 构造下载 URL（完整 URL）
         download_url = f"{get_download_base_url(request)}/{username}/{encoded_filename}"
 
-        return {
+        # 构建响应
+        response_data = {
             "message": "File uploaded successfully",
             "download_url": download_url,
             "download_path": f"/{username}/{encoded_filename}",
+            # 保持向后兼容：filename 仍然是编码后的文件名
             "filename": encoded_filename,
+            # 显式提供编码后的文件名和原始文件名
+            "encoded_filename": encoded_filename,
+            "original_filename": meta.original_filename,
             "meta": meta.model_dump(mode="json"),
         }
+
+        # 如果使用了默认文件名，添加提示信息
+        if original_filename.startswith("file_"):
+            response_data["hint"] = (
+                "Tip: Use 'curl -T file http://server/username/' (with trailing slash) to preserve original filename"
+            )
+
+        return response_data
 
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
@@ -284,13 +315,27 @@ async def upload_file_put(
 
     Args:
         request: 请求对象
-        username: 用户名
+        username: 用户名，可能包含文件名路径（如 wii/apollo.log）
         token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应
     """
-    return await _upload_file_put(request, username, token)
+    # 从路径中提取用户名和文件名
+    # curl -T file.txt http://server/username -> username: "username", filename: None
+    # curl -T file.txt http://server/username/file.txt -> username: "username", filename: "file.txt"
+    path_parts = username.split("/", 1)
+
+    if len(path_parts) == 2:
+        # 路径包含文件名
+        actual_username = path_parts[0]
+        filename_from_path = path_parts[1]
+    else:
+        # 路径只有用户名
+        actual_username = username
+        filename_from_path = None
+
+    return await _upload_file_put(request, actual_username, token, filename_from_path)
 
 
 @router.get("/{username}/{encoded_filename}")

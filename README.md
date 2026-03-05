@@ -136,6 +136,8 @@ curl --upload-file /path/to/file http://localhost:8000/username
   "download_url": "http://192.168.1.100:8000/username/AbCdEf123456.txt",
   "download_path": "/username/AbCdEf123456.txt",
   "filename": "AbCdEf123456.txt",
+  "original_filename": "file.txt",
+  "encoded_filename": "AbCdEf123456.txt",
   "meta": {
     "encoded_filename": "AbCdEf123456.txt",
     "original_filename": "file.txt",
@@ -154,16 +156,20 @@ curl --upload-file /path/to/file http://localhost:8000/username
 
 ### 下载文件
 
-使用 wget 或 curl 下载文件：
+使用 wget 或 curl 下载文件（会自动使用原始文件名）：
 
 ```bash
-wget http://localhost:8000/username/AbCdEf123456.txt
+# 推荐：wget，使用服务器返回的原始文件名
+wget --content-disposition http://localhost:8000/username/AbCdEf123456.txt
 ```
 
 或
 
 ```bash
-curl -O http://localhost:8000/username/AbCdEf123456.txt
+# 推荐：curl，使用服务器返回的原始文件名
+# -O: 使用远程文件名保存
+# -J: 使用 Content-Disposition 中的文件名（这里会是原始文件名）
+curl -OJ http://localhost:8000/username/AbCdEf123456.txt
 ```
 
 ### 查询文件元信息
