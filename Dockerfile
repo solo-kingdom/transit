@@ -10,15 +10,25 @@ ENV PYTHONUNBUFFERED=1 \
   PIP_NO_CACHE_DIR=1 \
   PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# 替换为阿里云镜像源（加速 apt-get）
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+
 # 安装系统依赖和 Caddy
 RUN apt-get update && apt-get install -y --no-install-recommends \
   curl \
   supervisor \
+  gnupg \
   && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
   && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends caddy \
   && rm -rf /var/lib/apt/lists/*
+
+# 复制配置文件
+COPY config/pip.conf /root/.pip/pip.conf
+COPY config/Caddyfile /etc/caddy/Caddyfile
+COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # 复制项目依赖文件
 COPY pyproject.toml ./
@@ -29,10 +39,6 @@ RUN pip install --no-cache-dir -e .
 # 复制项目代码
 COPY src/ ./src/
 COPY README.md ./
-
-# 复制配置文件
-COPY config/Caddyfile /etc/caddy/Caddyfile
-COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # 复制管理脚本
 COPY scripts/ ./scripts/
