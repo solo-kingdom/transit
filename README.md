@@ -6,6 +6,8 @@
 
 - 🔒 **读写分离** - 支持读写端口分离，增强安全性
 - 🎲 **文件名编码** - 使用随机字符串编码文件名，保护隐私
+- 🔗 **完整 URL** - 自动生成包含主机地址的完整下载 URL
+- 📊 **元信息管理** - 记录文件上传时间、来源 IP、文件大小等元信息
 - 🛡️ **安全防护** - 自动移除文件执行权限，防止恶意文件
 - 📁 **灵活存储** - 支持自定义数据保存路径
 - 🐳 **容器化部署** - 支持 Docker 和 Docker Compose
@@ -91,10 +93,24 @@ curl --upload-file /path/to/file http://localhost:8000/username
 ```json
 {
   "message": "File uploaded successfully",
+  "download_url": "http://192.168.1.100:8000/username/AbCdEf123456.txt",
   "download_path": "/username/AbCdEf123456.txt",
-  "filename": "AbCdEf123456.txt"
+  "filename": "AbCdEf123456.txt",
+  "meta": {
+    "encoded_filename": "AbCdEf123456.txt",
+    "original_filename": "file.txt",
+    "upload_time": "2026-03-05T13:30:00.123456",
+    "remote_address": "192.168.1.50",
+    "file_size": 1024,
+    "username": "username",
+    "file_path": "username/AbCdEf123456.txt"
+  }
 }
 ```
+
+**注意**：
+- `download_url` 包含完整的 URL（包含自动检测的本机 IP 或配置的 host）
+- `meta` 包含文件的元信息（上传时间、上传者 IP、文件大小等）
 
 ### 下载文件
 
@@ -110,12 +126,39 @@ wget http://localhost:8000/username/AbCdEf123456.txt
 curl -O http://localhost:8000/username/AbCdEf123456.txt
 ```
 
+### 查询文件元信息
+
+获取文件的详细元信息：
+
+```bash
+curl http://localhost:8000/username/AbCdEf123456.txt/meta
+```
+
+返回示例：
+```json
+{
+  "message": "File metadata retrieved successfully",
+  "meta": {
+    "encoded_filename": "AbCdEf123456.txt",
+    "original_filename": "file.txt",
+    "upload_time": "2026-03-05T13:30:00.123456",
+    "remote_address": "192.168.1.50",
+    "file_size": 1024,
+    "username": "username",
+    "file_path": "username/AbCdEf123456.txt"
+  }
+}
+```
+
 ### API 端点
 
-- `POST /{username}` - 上传文件
+- `POST /{username}` - 上传文件（multipart/form-data 格式）
+- `PUT /{username}` - 上传文件（原始文件内容，支持 curl --upload-file）
 - `GET /{username}/{encoded_filename}` - 下载文件
+- `GET /{username}/{encoded_filename}/meta` - 获取文件元信息
 - `GET /` - 服务信息
 - `GET /health` - 健康检查
+
 
 ## 配置
 
@@ -128,9 +171,15 @@ curl -O http://localhost:8000/username/AbCdEf123456.txt
 | `DATA_DIR` | 数据存储路径 | ./data |
 | `WRITE_PORT` | 写端口（上传） | 8000 |
 | `READ_PORT` | 读端口（下载） | None（使用同一端口） |
+| `DOWNLOAD_HOST` | 下载 URL 的主机地址 | 自动检测本机 IP |
 | `ENCODE_LENGTH` | 文件名编码长度 | 16 |
 | `MAX_FILE_SIZE` | 最大文件大小（字节） | 104857600 (100MB) |
 | `REMOVE_EXEC_PERMISSION` | 移除执行权限 | true |
+
+**DOWNLOAD_HOST 配置说明**：
+- 如果不设置，系统会自动检测本机 IP 地址
+- 可以设置为域名（如 `example.com`）或 IP 地址（如 `192.168.1.100`）
+- 在容器环境或反向代理后，建议显式设置此参数
 
 ### 读写分离配置
 
@@ -158,6 +207,9 @@ transit/
 │       ├── __init__.py
 │       ├── config.py          # 配置管理
 │       ├── main.py            # FastAPI 应用入口
+│       ├── models/            # 数据模型
+│       │   ├── __init__.py
+│       │   └── meta.py        # 文件元信息模型
 │       ├── routers/
 │       │   ├── __init__.py
 │       │   └── files.py       # 文件路由

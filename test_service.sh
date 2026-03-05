@@ -31,16 +31,21 @@ fi
 echo ""
 echo "2️⃣  测试文件上传（PUT 方法）..."
 UPLOAD_RESPONSE=$(curl -s --upload-file "$TEST_FILE" "$HOST/testuser")
+DOWNLOAD_URL=$(echo "$UPLOAD_RESPONSE" | grep -o '"download_url":"[^"]*"' | cut -d'"' -f4)
 DOWNLOAD_PATH=$(echo "$UPLOAD_RESPONSE" | grep -o '"download_path":"[^"]*"' | cut -d'"' -f4)
 
-if [ -n "$DOWNLOAD_PATH" ]; then
+if [ -n "$DOWNLOAD_URL" ] && [ -n "$DOWNLOAD_PATH" ]; then
     echo "✅ 文件上传成功"
+    echo "   完整 URL: $DOWNLOAD_URL"
     echo "   下载路径: $DOWNLOAD_PATH"
 else
     echo "❌ 文件上传失败"
     echo "   响应: $UPLOAD_RESPONSE"
     exit 1
 fi
+
+# 提取文件名
+FILENAME=$(echo "$UPLOAD_RESPONSE" | grep -o '"filename":"[^"]*"' | cut -d'"' -f4)
 
 # 测试 3: 下载文件
 echo ""
@@ -57,14 +62,32 @@ else
     exit 1
 fi
 
+# 测试 3.5: 查询文件元信息
+echo ""
+echo "3.5️⃣  测试查询文件元信息..."
+META_RESPONSE=$(curl -s "$HOST/testuser/$FILENAME/meta")
+
+if echo "$META_RESPONSE" | grep -q "upload_time" && \
+   echo "$META_RESPONSE" | grep -q "remote_address" && \
+   echo "$META_RESPONSE" | grep -q "file_size"; then
+    echo "✅ 元信息查询成功"
+    echo "   包含: 上传时间、来源 IP、文件大小"
+else
+    echo "❌ 元信息查询失败或不完整"
+    echo "   响应: $META_RESPONSE"
+    exit 1
+fi
+
 # 测试 4: 上传文件（POST 方法）
 echo ""
 echo "4️⃣  测试文件上传（POST 方法）..."
 POST_RESPONSE=$(curl -s -X POST -F "file=@$TEST_FILE" "$HOST/testuser2")
+POST_DOWNLOAD_URL=$(echo "$POST_RESPONSE" | grep -o '"download_url":"[^"]*"' | cut -d'"' -f4)
 POST_DOWNLOAD_PATH=$(echo "$POST_RESPONSE" | grep -o '"download_path":"[^"]*"' | cut -d'"' -f4)
 
-if [ -n "$POST_DOWNLOAD_PATH" ]; then
+if [ -n "$POST_DOWNLOAD_URL" ] && [ -n "$POST_DOWNLOAD_PATH" ]; then
     echo "✅ POST 上传成功"
+    echo "   完整 URL: $POST_DOWNLOAD_URL"
     echo "   下载路径: $POST_DOWNLOAD_PATH"
 else
     echo "❌ POST 上传失败"
