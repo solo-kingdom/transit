@@ -5,8 +5,8 @@
 
 import json
 import os
-import secrets
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -20,7 +20,6 @@ class FileService:
 
     def __init__(self):
         self.data_dir = settings.data_dir
-        self.encode_length = settings.encode_length
         self.max_file_size = settings.max_file_size
         self.remove_exec_permission = settings.remove_exec_permission
 
@@ -29,7 +28,7 @@ class FileService:
 
     def generate_encoded_filename(self, original_filename: str) -> str:
         """
-        生成随机编码的文件名
+        生成随机编码的文件名（使用 UUID）
 
         Args:
             original_filename: 原始文件名
@@ -37,14 +36,14 @@ class FileService:
         Returns:
             编码后的文件名（保留原始扩展名）
         """
-        # 生成随机字符串
-        random_str = secrets.token_urlsafe(self.encode_length)
+        # 使用 UUID 生成唯一标识符
+        unique_id = str(uuid.uuid4())
 
         # 获取文件扩展名
         ext = Path(original_filename).suffix
 
         # 组合成新文件名
-        encoded_filename = f"{random_str}{ext}"
+        encoded_filename = f"{unique_id}{ext}"
 
         return encoded_filename
 

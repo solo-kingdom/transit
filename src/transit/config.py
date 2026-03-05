@@ -5,7 +5,7 @@
 
 import socket
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -48,9 +48,6 @@ class Settings(BaseSettings):
     write_port: int = 8000
     read_port: Optional[int] = None  # 如果为 None，则读写使用同一端口
 
-    # 文件名编码长度
-    encode_length: int = 16
-
     # 文件大小限制（字节），默认 100MB
     max_file_size: int = 100 * 1024 * 1024
 
@@ -60,6 +57,18 @@ class Settings(BaseSettings):
     # 下载 Host 配置
     # 如果为 None，则自动获取本机 IP
     download_host: Optional[str] = None
+
+    # 认证配置
+    # 是否启用认证
+    auth_enabled: bool = False
+
+    # 读 token 列表（多个 token 用逗号分隔）
+    # 用于下载文件和查询元信息
+    read_tokens: str = ""
+
+    # 写 token 列表（多个 token 用逗号分隔）
+    # 用于上传文件
+    write_tokens: str = ""
 
     @property
     def effective_read_port(self) -> int:
@@ -85,6 +94,20 @@ class Settings(BaseSettings):
             return f"http://{host}"
         else:
             return f"http://{host}:{port}"
+
+    @property
+    def read_token_list(self) -> List[str]:
+        """获取读 token 列表"""
+        if not self.read_tokens:
+            return []
+        return [token.strip() for token in self.read_tokens.split(",") if token.strip()]
+
+    @property
+    def write_token_list(self) -> List[str]:
+        """获取写 token 列表"""
+        if not self.write_tokens:
+            return []
+        return [token.strip() for token in self.write_tokens.split(",") if token.strip()]
 
 
 # 全局配置实例

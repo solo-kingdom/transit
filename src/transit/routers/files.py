@@ -3,9 +3,11 @@
 处理文件上传和下载请求
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Path as PathParam, Request
+from fastapi import APIRouter, File, UploadFile, HTTPException, Path as PathParam, Request, Depends
 from fastapi.responses import Response
+from typing import Optional
 
+from ..auth import verify_write_token, verify_read_token
 from ..config import settings
 from ..services.file_service import file_service
 
@@ -45,6 +47,7 @@ async def upload_file_post(
     request: Request,
     username: str = PathParam(..., description="用户名"),
     file: UploadFile = File(..., description="要上传的文件"),
+    token: Optional[str] = Depends(verify_write_token),
 ):
     """
     使用 POST 方法上传文件（multipart/form-data 格式）
@@ -53,6 +56,7 @@ async def upload_file_post(
         request: 请求对象
         username: 用户名
         file: 上传的文件
+        token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应
@@ -93,6 +97,7 @@ async def upload_file_post(
 async def upload_file_put(
     request: Request,
     username: str = PathParam(..., description="用户名"),
+    token: Optional[str] = Depends(verify_write_token),
 ):
     """
     使用 PUT 方法上传文件（原始文件内容）
@@ -101,6 +106,7 @@ async def upload_file_put(
     Args:
         request: 请求对象
         username: 用户名
+        token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应
@@ -151,6 +157,7 @@ async def upload_file_put(
 async def download_file(
     username: str = PathParam(..., description="用户名"),
     encoded_filename: str = PathParam(..., description="编码后的文件名"),
+    token: Optional[str] = Depends(verify_read_token),
 ):
     """
     下载文件
@@ -158,6 +165,7 @@ async def download_file(
     Args:
         username: 用户名
         encoded_filename: 编码后的文件名
+        token: 认证 token（如果启用认证）
 
     Returns:
         文件内容
@@ -184,6 +192,7 @@ async def download_file(
 async def get_file_meta(
     username: str = PathParam(..., description="用户名"),
     encoded_filename: str = PathParam(..., description="编码后的文件名"),
+    token: Optional[str] = Depends(verify_read_token),
 ):
     """
     获取文件元信息
@@ -191,6 +200,7 @@ async def get_file_meta(
     Args:
         username: 用户名
         encoded_filename: 编码后的文件名
+        token: 认证 token（如果启用认证）
 
     Returns:
         文件元信息（包括上传时间、原始文件名、上传者 IP 等）

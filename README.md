@@ -5,9 +5,11 @@
 ## 特性
 
 - 🔒 **读写分离** - 支持读写端口分离，增强安全性
-- 🎲 **文件名编码** - 使用随机字符串编码文件名，保护隐私
+- 🔐 **Token 认证** - 支持读写分离的 token 认证，可配置多个 token
+- 🎲 **UUID 文件名** - 使用 UUID 生成唯一文件名，保护隐私
 - 🔗 **完整 URL** - 自动生成包含主机地址的完整下载 URL
 - 📊 **元信息管理** - 记录文件上传时间、来源 IP、文件大小等元信息
+- 🛠️ **管理工具** - 提供命令行管理工具，支持统计、清理等功能
 - 🛡️ **安全防护** - 自动移除文件执行权限，防止恶意文件
 - 📁 **灵活存储** - 支持自定义数据保存路径
 - 🐳 **容器化部署** - 支持 Docker 和 Docker Compose
@@ -172,14 +174,39 @@ curl http://localhost:8000/username/AbCdEf123456.txt/meta
 | `WRITE_PORT` | 写端口（上传） | 8000 |
 | `READ_PORT` | 读端口（下载） | None（使用同一端口） |
 | `DOWNLOAD_HOST` | 下载 URL 的主机地址 | 自动检测本机 IP |
-| `ENCODE_LENGTH` | 文件名编码长度 | 16 |
 | `MAX_FILE_SIZE` | 最大文件大小（字节） | 104857600 (100MB) |
 | `REMOVE_EXEC_PERMISSION` | 移除执行权限 | true |
+| `AUTH_ENABLED` | 是否启用认证 | false |
+| `READ_TOKENS` | 读 token 列表（逗号分隔） | - |
+| `WRITE_TOKENS` | 写 token 列表（逗号分隔） | - |
 
 **DOWNLOAD_HOST 配置说明**：
 - 如果不设置，系统会自动检测本机 IP 地址
 - 可以设置为域名（如 `example.com`）或 IP 地址（如 `192.168.1.100`）
 - 在容器环境或反向代理后，建议显式设置此参数
+
+### 认证配置
+
+启用 token 认证后，需要在请求头中携带 token：
+
+```bash
+# 启用认证
+export AUTH_ENABLED=true
+export READ_TOKENS=read123,read456
+export WRITE_TOKENS=write123,write456
+
+# 上传文件（需要写 token）
+curl -H "Authorization: Bearer write123" --upload-file file.txt http://localhost:8000/user
+
+# 下载文件（需要读 token）
+curl -H "Authorization: Bearer read123" http://localhost:8000/user/filename
+```
+
+**认证说明**：
+- `READ_TOKENS`：用于下载文件和查询元信息
+- `WRITE_TOKENS`：用于上传文件
+- 多个 token 用逗号分隔
+- token 在请求头中以 `Authorization: Bearer <token>` 格式携带
 
 ### 读写分离配置
 
@@ -205,6 +232,7 @@ transit/
 ├── src/
 │   └── transit/
 │       ├── __init__.py
+│       ├── auth.py             # 认证模块
 │       ├── config.py          # 配置管理
 │       ├── main.py            # FastAPI 应用入口
 │       ├── models/            # 数据模型
@@ -218,18 +246,77 @@ transit/
 │           └── file_service.py # 文件处理服务
 ├── tests/                     # 测试文件
 ├── data/                      # 数据存储目录
+├── manage.py                  # 管理工具
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml
 └── README.md
 ```
 
+## 管理工具
+
+项目提供命令行管理工具 `manage.py`，用于统计和清理文件。
+
+### 统计文件信息
+
+```bash
+# 统计所有文件信息
+python manage.py stats
+
+# 统计指定用户的文件信息
+python manage.py stats -u username
+
+# 统计所有用户的详细信息
+python manage.py stats --detail
+```
+
+### 列出文件
+
+```bash
+# 列出所有文件
+python manage.py list
+
+# 列出指定用户的文件
+python manage.py list -u username
+```
+
+### 清理文件
+
+```bash
+# 清理所有文件（需要确认）
+python manage.py clean
+
+# 清理指定用户的文件
+python manage.py clean -u username
+
+# 清理 7 天前的所有文件
+python manage.py clean --days 7
+
+# 清理指定用户 30 天前的文件
+python manage.py clean -u username --days 30
+
+# 强制清理（不需要确认）
+python manage.py clean --force
+```
+
+### 在 Docker 容器中使用
+
+```bash
+# 进入容器
+docker exec -it transit-write bash
+
+# 运行管理工具
+python manage.py stats
+python manage.py clean --days 30 --force
+```
+
 ## 安全特性
 
-1. **文件名随机编码** - 上传的文件会被重命名为随机字符串，防止文件名泄露
-2. **移除执行权限** - 自动移除上传文件的执行权限，防止恶意脚本执行
-3. **文件大小限制** - 限制上传文件大小，防止 DoS 攻击
-4. **读写分离** - 可选的读写端口分离，增强访问控制
+1. **UUID 文件名** - 上传的文件使用 UUID 重命名，防止文件名泄露
+2. **Token 认证** - 支持读写分离的 token 认证，保护接口安全
+3. **移除执行权限** - 自动移除上传文件的执行权限，防止恶意脚本执行
+4. **文件大小限制** - 限制上传文件大小，防止 DoS 攻击
+5. **读写分离** - 可选的读写端口分离，增强访问控制
 
 ## 开发
 
