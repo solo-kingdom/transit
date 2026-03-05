@@ -18,8 +18,7 @@ async def lifespan(app: FastAPI):
     # 启动时
     print(f"🚀 {settings.app_name} v{settings.app_version} starting...")
     print(f"📁 Data directory: {settings.data_dir.absolute()}")
-    print(f"📝 Write port: {settings.write_port}")
-    print(f"📖 Read port: {settings.effective_read_port}")
+    print(f"🔌 Service port: {settings.port}")
 
     yield
 

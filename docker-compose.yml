@@ -1,19 +1,24 @@
 version: '3.8'
 
 services:
-  # 写服务（上传）
-  transit-write:
+  # 后端服务（单一服务，监听 8000 端口）
+  transit:
     build: .
-    container_name: transit-write
-    ports:
-      - "8000:8000"
+    container_name: transit
+    expose:
+      - "8000"
     volumes:
       - ./data:/app/data
     environment:
-      - APP_NAME=File Transit Service (Write)
+      - APP_NAME=File Transit Service
       - DATA_DIR=/app/data
-      - WRITE_PORT=8000
-      # READ_PORT 不设置，表示读写使用同一端口
+      - PORT=8000
+      # 认证配置（可选）
+      # - AUTH_ENABLED=true
+      # - READ_TOKENS=read123,read456
+      # - WRITE_TOKENS=write123,write456
+      # 下载 Host 配置（可选，不设置则自动检测）
+      # - DOWNLOAD_HOST=example.com
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
@@ -21,31 +26,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 5s
+    networks:
+      - transit-network
 
-  # 读服务（下载）- 可选，如果需要读写分离
-  # 取消注释以下内容以启用读写分离
-  # transit-read:
-  #   build: .
-  #   container_name: transit-read
-  #   ports:
-  #     - "8001:8000"
-  #   volumes:
-  #     - ./data:/app/data
-  #   environment:
-  #     - APP_NAME=File Transit Service (Read)
-  #     - DATA_DIR=/app/data
-  #     - WRITE_PORT=8001
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 5s
+  # Caddy 反向代理 - 读写分离
+  caddy:
+    image: caddy:2-alpine
+    container_name: transit-caddy
+    ports:
+      - "8000:8000"   # 写端口（仅 POST/PUT）
+      - "8001:8001"   # 读端口（仅 GET/HEAD）
+      # - "80:80"     # 可选：标准 HTTP 端口（同时支持读写）
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - transit
+    restart: unless-stopped
+    networks:
+      - transit-network
+
+networks:
+  transit-network:
+    driver: bridge
 
 volumes:
   data:
-
-networks:
-  default:
-    name: transit-network

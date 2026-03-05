@@ -1,0 +1,72 @@
+# Caddyfile - 文件中转服务读写分离配置
+# 
+# 架构说明：
+# - 后端服务（transit）监听单一端口 8000
+# - Caddy 作为反向代理，通过不同端口和方法控制读写权限
+# - 写端口 8000：仅允许 POST/PUT 方法
+# - 读端口 8001：仅允许 GET/HEAD 方法
+
+{
+    # 全局配置
+    admin off
+    auto_https off
+}
+
+# 写端口（8000）- 仅允许 POST 和 PUT 方法
+:8000 {
+    # 健康检查和根路径信息允许 GET
+    @public_paths {
+        path /health /
+    }
+    
+    @public_get {
+        path /health /
+        method GET
+    }
+    
+    # 写操作：POST/PUT 方法
+    @write_methods {
+        method POST PUT
+    }
+    
+    # 组合条件：公共路径的 GET 请求 或 写操作
+    @allowed {
+        @public_get
+        @write_methods
+    }
+    
+    # 拒绝所有不允许的请求
+    @denied not @allowed
+    
+    respond @denied "Method Not Allowed" 405 {
+        close
+    }
+    
+    # 转发到后端服务
+    reverse_proxy transit:8000
+}
+
+# 读端口（8001）- 仅允许 GET 和 HEAD 方法
+:8001 {
+    # 只允许 GET 和 HEAD 方法
+    @read_methods {
+        method GET HEAD
+    }
+    
+    # 拒绝非 GET/HEAD 请求
+    @denied not @read_methods
+    
+    respond @denied "Method Not Allowed" 405 {
+        close
+    }
+    
+    # 转发到后端服务
+    reverse_proxy transit:8000
+}
+
+# 可选：标准 HTTP 端口配置（同时支持读写）
+# 取消注释以下配置以启用 80 端口
+# :80 {
+#     # 允许所有方法
+#     reverse_proxy transit:8000
+# }

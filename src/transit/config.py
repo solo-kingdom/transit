@@ -44,9 +44,8 @@ class Settings(BaseSettings):
     # 数据存储路径
     data_dir: Path = Path("./data")
 
-    # 读写端口配置（可选分离）
-    write_port: int = 8000
-    read_port: Optional[int] = None  # 如果为 None，则读写使用同一端口
+    # 服务端口（单一端口，读写分离由反向代理控制）
+    port: int = 8000
 
     # 文件大小限制（字节），默认 100MB
     max_file_size: int = 100 * 1024 * 1024
@@ -71,11 +70,6 @@ class Settings(BaseSettings):
     write_tokens: str = ""
 
     @property
-    def effective_read_port(self) -> int:
-        """获取实际使用的读端口"""
-        return self.read_port if self.read_port else self.write_port
-
-    @property
     def effective_download_host(self) -> str:
         """获取实际使用的下载 host"""
         if self.download_host:
@@ -87,13 +81,8 @@ class Settings(BaseSettings):
     def download_base_url(self) -> str:
         """获取下载的基础 URL"""
         host = self.effective_download_host
-        port = self.effective_read_port
-
-        # 如果是默认端口（80 或 443），则不显示端口号
-        if port in (80, 443):
-            return f"http://{host}"
-        else:
-            return f"http://{host}:{port}"
+        # 使用标准 HTTP 端口 80
+        return f"http://{host}"
 
     @property
     def read_token_list(self) -> List[str]:
