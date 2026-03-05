@@ -3,6 +3,7 @@
 处理文件上传和下载请求
 """
 
+import re
 from fastapi import APIRouter, File, UploadFile, HTTPException, Path as PathParam, Request, Depends
 from fastapi.responses import Response
 from typing import Optional
@@ -13,6 +14,60 @@ from ..services.file_service import file_service
 
 # 创建路由器
 router = APIRouter()
+
+
+def sanitize_username(username: str) -> str:
+    """
+    清理用户名，只保留字母、数字、下划线和连字符
+
+    Args:
+        username: 原始用户名
+
+    Returns:
+        清理后的用户名
+    """
+    # 移除路径分隔符，处理多级路径
+    username = username.replace("/", "_").replace("\\", "_")
+
+    # 只保留字母、数字、下划线和连字符
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", username)
+
+    # 如果清理后为空，使用 anonymous
+    if not sanitized:
+        return "anonymous"
+
+    return sanitized
+
+
+def get_download_base_url(request: Request) -> str:
+    """
+    获取下载的基础 URL
+
+    优先级：
+    1. 如果配置了 download_host，使用配置的 host
+    2. 否则使用请求中的 host（referer host）
+
+    Args:
+        request: FastAPI 请求对象
+
+    Returns:
+        基础 URL，格式为 "http://host:port" 或 "http://host"
+    """
+    if settings.download_host:
+        # 使用配置的 host
+        return f"http://{settings.download_host}"
+
+    # 使用请求中的 host
+    # 从请求 URL 中获取 scheme、hostname 和 port
+    scheme = request.url.scheme
+    hostname = request.url.hostname or "localhost"
+    port = request.url.port
+
+    # 如果是标准端口（http:80, https:443），则不包含端口号
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        return f"{scheme}://{hostname}:{port}"
+    else:
+        return f"{scheme}://{hostname}"
 
 
 def get_client_ip(request: Request) -> str:
@@ -42,7 +97,80 @@ def get_client_ip(request: Request) -> str:
     return "unknown"
 
 
-@router.post("/{username}")
+async def _upload_file_post(
+    request: Request,
+    username: str,
+    file: UploadFile,
+    token: Optional[str],
+):
+    """
+    POST 上传文件的实际处理逻辑
+
+    Args:
+        request: 请求对象
+        username: 用户名
+        file: 上传的文件
+        token: 认证 token（如果启用认证）
+
+    Returns:
+        包含完整下载 URL 的响应
+    """
+    try:
+        # 清理用户名
+        username = sanitize_username(username)
+
+        # 读取文件内容
+        content = await file.read()
+
+        # 获取客户端 IP
+        remote_address = get_client_ip(request)
+
+        # 保存文件
+        encoded_filename, meta = file_service.save_file(
+            username=username,
+            file_content=content,
+            original_filename=file.filename or "unnamed",
+            remote_address=remote_address,
+        )
+
+        # 构造下载 URL（完整 URL）
+        download_url = f"{get_download_base_url(request)}/{username}/{encoded_filename}"
+
+        return {
+            "message": "File uploaded successfully",
+            "download_url": download_url,
+            "download_path": f"/{username}/{encoded_filename}",
+            "filename": encoded_filename,
+            "meta": meta.model_dump(mode="json"),
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
+
+@router.post("/")
+async def upload_file_post_anonymous(
+    request: Request,
+    file: UploadFile = File(..., description="要上传的文件"),
+    token: Optional[str] = Depends(verify_write_token),
+):
+    """
+    使用 POST 方法上传文件到 anonymous 用户（multipart/form-data 格式）
+
+    Args:
+        request: 请求对象
+        file: 上传的文件
+        token: 认证 token（如果启用认证）
+
+    Returns:
+        包含完整下载 URL 的响应
+    """
+    return await _upload_file_post(request, "anonymous", file, token)
+
+
+@router.post("/{username:path}")
 async def upload_file_post(
     request: Request,
     username: str = PathParam(..., description="用户名"),
@@ -61,47 +189,16 @@ async def upload_file_post(
     Returns:
         包含完整下载 URL 的响应
     """
-    try:
-        # 读取文件内容
-        content = await file.read()
-
-        # 获取客户端 IP
-        remote_address = get_client_ip(request)
-
-        # 保存文件
-        encoded_filename, meta = file_service.save_file(
-            username=username,
-            file_content=content,
-            original_filename=file.filename or "unnamed",
-            remote_address=remote_address,
-        )
-
-        # 构造下载 URL（完整 URL）
-        download_url = f"{settings.download_base_url}/{username}/{encoded_filename}"
-
-        return {
-            "message": "File uploaded successfully",
-            "download_url": download_url,
-            "download_path": f"/{username}/{encoded_filename}",
-            "filename": encoded_filename,
-            "meta": meta.model_dump(mode="json"),
-        }
-
-    except ValueError as e:
-        raise HTTPException(status_code=413, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+    return await _upload_file_post(request, username, file, token)
 
 
-@router.put("/{username}")
-async def upload_file_put(
+async def _upload_file_put(
     request: Request,
-    username: str = PathParam(..., description="用户名"),
-    token: Optional[str] = Depends(verify_write_token),
+    username: str,
+    token: Optional[str],
 ):
     """
-    使用 PUT 方法上传文件（原始文件内容）
-    支持 curl --upload-file 命令
+    PUT 上传文件的实际处理逻辑
 
     Args:
         request: 请求对象
@@ -112,6 +209,9 @@ async def upload_file_put(
         包含完整下载 URL 的响应
     """
     try:
+        # 清理用户名
+        username = sanitize_username(username)
+
         # 读取原始文件内容
         content = await request.body()
 
@@ -137,7 +237,7 @@ async def upload_file_put(
         )
 
         # 构造下载 URL（完整 URL）
-        download_url = f"{settings.download_base_url}/{username}/{encoded_filename}"
+        download_url = f"{get_download_base_url(request)}/{username}/{encoded_filename}"
 
         return {
             "message": "File uploaded successfully",
@@ -151,6 +251,45 @@ async def upload_file_put(
         raise HTTPException(status_code=413, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
+
+@router.put("/")
+async def upload_file_put_anonymous(
+    request: Request,
+    token: Optional[str] = Depends(verify_write_token),
+):
+    """
+    使用 PUT 方法上传文件到 anonymous 用户（原始文件内容）
+
+    Args:
+        request: 请求对象
+        token: 认证 token（如果启用认证）
+
+    Returns:
+        包含完整下载 URL 的响应
+    """
+    return await _upload_file_put(request, "anonymous", token)
+
+
+@router.put("/{username:path}")
+async def upload_file_put(
+    request: Request,
+    username: str = PathParam(..., description="用户名"),
+    token: Optional[str] = Depends(verify_write_token),
+):
+    """
+    使用 PUT 方法上传文件（原始文件内容）
+    支持 curl --upload-file 命令
+
+    Args:
+        request: 请求对象
+        username: 用户名
+        token: 认证 token（如果启用认证）
+
+    Returns:
+        包含完整下载 URL 的响应
+    """
+    return await _upload_file_put(request, username, token)
 
 
 @router.get("/{username}/{encoded_filename}")

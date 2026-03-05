@@ -3,31 +3,10 @@
 使用 pydantic-settings 管理应用配置
 """
 
-import socket
 from pathlib import Path
 from typing import Optional, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-def get_local_ip() -> str:
-    """
-    获取本机 IP 地址
-
-    Returns:
-        本机 IP 地址，如果无法获取则返回 127.0.0.1
-    """
-    try:
-        # 创建一个 UDP socket 连接到外部地址（不会真正发送数据）
-        # 这样可以获取本机用于访问外网的路由 IP
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            # 连接到 Google DNS（不需要真正连接）
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            return local_ip
-    except Exception:
-        # 如果获取失败，返回 localhost
-        return "127.0.0.1"
 
 
 class Settings(BaseSettings):
@@ -54,8 +33,9 @@ class Settings(BaseSettings):
     remove_exec_permission: bool = True
 
     # 下载 Host 配置
-    # 如果为 None，则自动获取本机 IP
-    download_host: Optional[str] = None
+    # 如果为空，则使用请求中的 host（referer host）
+    # 如果配置了值，则使用配置的 host
+    download_host: str = ""
 
     # 认证配置
     # 是否启用认证
@@ -68,21 +48,6 @@ class Settings(BaseSettings):
     # 写 token 列表（多个 token 用逗号分隔）
     # 用于上传文件
     write_tokens: str = ""
-
-    @property
-    def effective_download_host(self) -> str:
-        """获取实际使用的下载 host"""
-        if self.download_host:
-            return self.download_host
-        # 自动获取本机 IP
-        return get_local_ip()
-
-    @property
-    def download_base_url(self) -> str:
-        """获取下载的基础 URL"""
-        host = self.effective_download_host
-        # 使用标准 HTTP 端口 80
-        return f"http://{host}"
 
     @property
     def read_token_list(self) -> List[str]:
