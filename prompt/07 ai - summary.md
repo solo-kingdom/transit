@@ -65,7 +65,7 @@
 
 ### 6. 管理工具
 
-提供命令行管理工具 `manage.py`，在容器内运行：
+提供命令行管理工具 `scripts/manage.py`，在容器内运行：
 
 **统计功能**
 - 统计所有/指定用户的文件数量和总大小
@@ -77,7 +77,21 @@
 - 按时间清理（清理 N 天前的文件）
 - 支持强制清理模式
 
-### 7. 灵活配置
+### 7. Makefile 命令
+
+提供 Makefile 简化常用操作：
+
+**常用命令**
+- `make help` - 查看所有可用命令
+- `make build` - 构建 Docker 镜像
+- `make up` - 启动服务（后台运行）
+- `make down` - 停止并删除服务
+- `make restart` - 重启服务
+- `make logs` - 查看服务日志
+- `make test` - 启动测试服务（前台运行）
+- `make clean` - 清理未使用的 Docker 资源
+
+### 8. 灵活配置
 
 **环境变量配置**
 - `DATA_DIR` - 数据存储路径（默认 ./data）
@@ -111,3 +125,29 @@
 - 文件存储在本地文件系统
 - 元信息以 JSON 格式存储
 - 支持按用户分目录存储
+
+## 项目结构
+
+```
+transit/
+├── src/transit/              # 源代码目录
+│   ├── auth.py              # 认证模块
+│   ├── config.py            # 配置管理
+│   ├── main.py              # FastAPI 应用入口
+│   ├── models/              # 数据模型
+│   ├── routers/             # 路由模块
+│   └── services/            # 服务模块
+├── config/                   # 配置文件目录
+│   ├── Caddyfile            # Caddy 配置
+│   └── supervisord.conf     # Supervisor 配置
+├── scripts/                  # 脚本目录
+│   ├── manage.py            # 管理工具
+│   └── run_dev.py           # 开发运行脚本
+├── tests/                    # 测试文件
+├── docs/                     # 文档目录
+├── data/                     # 数据存储目录
+├── Dockerfile
+├── docker-compose.yml
+├── Makefile                  # Make 命令集合
+└── pyproject.toml
+```

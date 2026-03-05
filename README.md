@@ -25,6 +25,36 @@
 
 ## 快速开始
 
+### 使用 Makefile（最简单）
+
+1. 克隆项目
+```bash
+git clone <repository-url>
+cd transit
+```
+
+2. 构建并启动服务
+```bash
+make build
+make up
+```
+
+3. 查看日志
+```bash
+make logs
+```
+
+4. 停止服务
+```bash
+make down
+```
+
+**其他常用命令**：
+- `make help` - 查看所有可用命令
+- `make test` - 启动测试服务（前台运行）
+- `make restart` - 重启服务
+- `make clean` - 清理未使用的 Docker 资源
+
 ### 使用 Docker Compose（推荐）
 
 1. 克隆项目
@@ -271,52 +301,57 @@ transit/
 │       └── services/
 │           ├── __init__.py
 │           └── file_service.py # 文件处理服务
-├── tests/                     # 测试文件
-├── data/                      # 数据存储目录
-├── manage.py                  # 管理工具
-├── Caddyfile                  # Caddy 配置文件
-├── supervisord.conf           # Supervisor 配置文件
+├── config/                     # 配置文件目录
+│   ├── Caddyfile              # Caddy 配置文件
+│   └── supervisord.conf       # Supervisor 配置文件
+├── scripts/                    # 脚本目录
+│   ├── manage.py              # 管理工具
+│   └── run_dev.py             # 开发运行脚本
+├── tests/                      # 测试文件
+├── docs/                       # 文档目录
+├── data/                       # 数据存储目录
 ├── Dockerfile
 ├── docker-compose.yml
+├── Makefile                    # Make 命令集合
 ├── pyproject.toml
 └── README.md
 ```
 
 ## 管理工具
 
-项目提供命令行管理工具 `manage.py`，用于统计和清理文件。
+项目提供命令行管理工具 `scripts/manage.py`，用于统计和清理文件。
 
 ### 统计文件信息
 
 ```bash
 # 统计所有文件信息
-python manage.py stats
+python scripts/manage.py stats
 
 # 统计指定用户的文件信息
-python manage.py stats -u username
+python scripts/manage.py stats -u username
 
 # 统计所有用户的详细信息
-python manage.py stats --detail
+python scripts/manage.py stats --detail
 ```
 
 ### 列出文件
 
 ```bash
 # 列出所有文件
-python manage.py list
+python scripts/manage.py list
 
 # 列出指定用户的文件
-python manage.py list -u username
+python scripts/manage.py list -u username
 ```
 
 ### 清理文件
 
 ```bash
 # 清理所有文件（需要确认）
-python manage.py clean
+python scripts/manage.py clean
 
 # 清理指定用户的文件
-python manage.py clean -u username
+python scripts/manage.py clean -u username
 
 # 清理 7 天前的所有文件
 python manage.py clean --days 7

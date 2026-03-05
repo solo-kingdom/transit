@@ -53,8 +53,12 @@ docker-compose.yml
 .dockerignore
 
 # Documentation
-*.md
 docs/
+prompt/
+notes/
+
+# Scripts (exclude test scripts)
+scripts/test_*.sh
 
 # Other
 .env

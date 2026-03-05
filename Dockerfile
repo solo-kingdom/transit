@@ -30,11 +30,12 @@ RUN pip install --no-cache-dir -e .
 COPY src/ ./src/
 COPY README.md ./
 
-# 复制 Caddy 配置文件
-COPY Caddyfile /etc/caddy/Caddyfile
+# 复制配置文件
+COPY config/Caddyfile /etc/caddy/Caddyfile
+COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# 复制 Supervisor 配置文件
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# 复制管理脚本
+COPY scripts/ ./scripts/
 
 # 创建必要的目录
 RUN mkdir -p /app/data /var/log/supervisor
