@@ -22,6 +22,22 @@
 4. 对文件进行随机字符串编码，仅在上传时给出包含编码后的文件下载路径
 5. 注意系统安全，通过机制避免安全漏洞，比如移除文件执行权限
 
+# 预期使用方式
+
+1. 上传
+
+```
+上传命令
+curl --upload-file path/to/file {host:port}/{user-name}
+// 返回
+{host:port}/{user-name}/{encode-file-name}
+```
+
+```
+下载命令
+wget {host:port}/{user-name}/{encode-file-name}
+```
+
 # For AI
 
 1. 使用框架命令初始化，不要生成代码
