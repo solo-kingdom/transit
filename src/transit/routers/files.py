@@ -4,6 +4,7 @@
 """
 
 import re
+from urllib.parse import quote
 from fastapi import APIRouter, File, UploadFile, HTTPException, Path as PathParam, Request, Depends
 from fastapi.responses import Response
 from typing import Optional
@@ -319,11 +320,34 @@ async def download_file(
     if content is None:
         raise HTTPException(status_code=404, detail="File not found")
 
+    # 读取元信息以获取原始文件名
+    meta = file_service.get_meta(username, encoded_filename)
+
+    # 确定要使用的文件名
+    if meta and meta.original_filename:
+        original_filename = meta.original_filename
+    else:
+        # 降级：使用编码后的文件名
+        original_filename = encoded_filename
+
+    # 构建 Content-Disposition 响应头，支持 RFC 5987
+    # 格式：attachment; filename="fallback"; filename*=UTF-8''encoded_filename
+    # 对文件名进行 URL 编码以支持非 ASCII 字符
+    encoded_filename_url = quote(original_filename, safe="")
+
+    # 生成 ASCII 降级文件名（移除或替换非 ASCII 字符）
+    ascii_filename = original_filename.encode("ascii", "replace").decode("ascii")
+
+    # 构建响应头
+    content_disposition = (
+        f"attachment; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename_url}"
+    )
+
     # 返回文件内容
     return Response(
         content=content,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={encoded_filename}"},
+        headers={"Content-Disposition": content_disposition},
     )
 
 
