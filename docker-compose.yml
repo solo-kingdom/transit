@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # 写服务（上传）
+  transit-write:
+    build: .
+    container_name: transit-write
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - APP_NAME=File Transit Service (Write)
+      - DATA_DIR=/app/data
+      - WRITE_PORT=8000
+      # READ_PORT 不设置，表示读写使用同一端口
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # 读服务（下载）- 可选，如果需要读写分离
+  # 取消注释以下内容以启用读写分离
+  # transit-read:
+  #   build: .
+  #   container_name: transit-read
+  #   ports:
+  #     - "8001:8000"
+  #   volumes:
+  #     - ./data:/app/data
+  #   environment:
+  #     - APP_NAME=File Transit Service (Read)
+  #     - DATA_DIR=/app/data
+  #     - WRITE_PORT=8001
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 5s
+
+volumes:
+  data:
+
+networks:
+  default:
+    name: transit-network
