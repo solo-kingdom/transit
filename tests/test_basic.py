@@ -37,21 +37,14 @@ def test_upload_and_download_file():
 
     assert response.status_code == 200
     data = response.json()
-    assert "download_url" in data  # 检查完整 URL
-    assert "download_path" in data
-    assert "filename" in data
-    assert "meta" in data  # 检查 meta 信息
-
-    # 检查 meta 信息内容
-    meta = data["meta"]
-    assert meta["original_filename"] == "test.txt"
-    assert meta["file_size"] == len(file_content)
-    assert "upload_time" in meta
-    assert "remote_address" in meta
+    assert "download_url" in data  # 仅检查完整 URL
 
     # 下载文件
-    download_path = data["download_path"]
-    response = client.get(download_path)
+    download_url = data["download_url"]
+    # 去掉 host 部分，转成相对路径以便通过 TestClient 访问
+    path = download_url.split("://", 1)[-1]
+    path = path[path.find("/") :]
+    response = client.get(path)
 
     assert response.status_code == 200
     assert response.content == file_content
@@ -64,20 +57,13 @@ def test_upload_with_put():
 
     assert response.status_code == 200
     data = response.json()
-    assert "download_url" in data  # 检查完整 URL
-    assert "download_path" in data
-    assert "filename" in data
-    assert "meta" in data  # 检查 meta 信息
-
-    # 检查 meta 信息
-    meta = data["meta"]
-    assert meta["file_size"] == len(file_content)
-    assert "upload_time" in meta
-    assert "remote_address" in meta
+    assert "download_url" in data  # 仅检查完整 URL
 
     # 下载文件
-    download_path = data["download_path"]
-    response = client.get(download_path)
+    download_url = data["download_url"]
+    path = download_url.split("://", 1)[-1]
+    path = path[path.find("/") :]
+    response = client.get(path)
 
     assert response.status_code == 200
     assert response.content == file_content
@@ -98,8 +84,11 @@ def test_get_file_meta():
 
     assert upload_response.status_code == 200
     upload_data = upload_response.json()
-    encoded = upload_data["encoded_filename"]
-    original = upload_data["original_filename"]
+    download_url = upload_data["download_url"]
+    # 从 download_url 中解析 encoded 和 original
+    path = download_url.split("://", 1)[-1]
+    path = path[path.find("/") + 1 :]  # 去掉第一个 '/'
+    encoded, original = path.split("/", 1)
 
     # 获取元信息
     meta_response = client.get(f"/{encoded}/{original}/meta")
@@ -133,12 +122,6 @@ def test_download_url_format():
     assert response.status_code == 200
     data = response.json()
 
-    # 检查 download_url 是否包含协议和 host，并包含 encoded_filename
+    # 检查 download_url 是否包含协议和 host
     download_url = data["download_url"]
     assert download_url.startswith("http://")
-    encoded = data["encoded_filename"]
-    assert f"/{encoded}/" in download_url
-
-    # 检查 download_path 是相对路径
-    download_path = data["download_path"]
-    assert download_path.startswith(f"/{encoded}/")

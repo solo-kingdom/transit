@@ -132,26 +132,12 @@ curl --upload-file /path/to/file http://localhost:8000
 返回示例：
 ```json
 {
-  "message": "File uploaded successfully",
-  "download_url": "http://192.168.1.100:8000/AbCdEf123456.txt/file.txt",
-  "download_path": "/AbCdEf123456.txt/file.txt",
-  "filename": "AbCdEf123456.txt",
-  "original_filename": "file.txt",
-  "encoded_filename": "AbCdEf123456.txt",
-  "meta": {
-    "encoded_filename": "AbCdEf123456.txt",
-    "original_filename": "file.txt",
-    "upload_time": "2026-03-05T13:30:00.123456",
-    "remote_address": "192.168.1.50",
-    "file_size": 1024
-  }
+  "download_url": "http://192.168.1.100:8000/AbCdEf123456.txt/file.txt"
 }
 ```
 
 **注意**：
 - `download_url` 包含完整的 URL（包含自动检测的本机 IP 或配置的 host）
-- `meta` 包含文件的元信息（上传时间、上传者 IP、文件大小等）
-
 ### 下载文件
 
 使用 wget 或 curl 下载文件：

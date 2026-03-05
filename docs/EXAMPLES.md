@@ -38,7 +38,7 @@ fastapi dev src/transit/main.py
 # 上传文件
 curl --upload-file myfile.txt http://localhost:8000
 # 返回示例（简化）
-{"message":"File uploaded successfully","download_path":"/AbCdEf123456/myfile.txt","filename":"AbCdEf123456","original_filename":"myfile.txt","encoded_filename":"AbCdEf123456"}
+{"download_url":"http://localhost:8000/AbCdEf123456/myfile.txt"}
 ```
 
 ### 方式 2: 使用 curl POST 方法

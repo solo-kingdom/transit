@@ -37,13 +37,16 @@ else
     exit 1
 fi
 
-# 提取文件名
-FILENAME=$(echo "$RESPONSE" | grep -o '"encoded_filename":"[^"]*"' | cut -d'"' -f4)
-
 # 测试 2: 查询元信息
 echo ""
 echo "2️⃣  测试查询文件元信息..."
-META_RESPONSE=$(curl -s "$HOST/testuser/$FILENAME/meta")
+
+# 从 DOWNLOAD_URL 中解析 encoded 和 original
+REL_PATH="${DOWNLOAD_URL#*://*/}"
+ENCODED="$(echo "$REL_PATH" | cut -d'/' -f1)"
+ORIGINAL="$(echo "$REL_PATH" | cut -d'/' -f2-)"
+
+META_RESPONSE=$(curl -s "$HOST/$ENCODED/$ORIGINAL/meta")
 echo "元信息: $META_RESPONSE"
 
 # 验证元信息字段

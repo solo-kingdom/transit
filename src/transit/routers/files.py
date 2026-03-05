@@ -81,30 +81,17 @@ def _build_upload_response(
 ) -> dict:
     """
     构造统一的上传成功响应结构
+
+    根据需求，上传接口只返回下载链接，避免冗余信息泄露。
     """
     # 下载 URL: /{encoded_filename}/{original_filename}
     original_for_path = quote(meta.original_filename, safe="")
     download_url = f"{get_download_base_url(request)}/{encoded_filename}/{original_for_path}"
 
-    response: dict = {
-        "message": "File uploaded successfully",
+    # 最小化响应体：仅返回下载 URL
+    return {
         "download_url": download_url,
-        "download_path": f"/{encoded_filename}/{original_for_path}",
-        # 保持向后兼容：filename 仍然是编码后的文件名
-        "filename": encoded_filename,
-        # 显式提供编码后的文件名和原始文件名
-        "encoded_filename": encoded_filename,
-        "original_filename": meta.original_filename,
-        "meta": meta.model_dump(mode="json"),
     }
-
-    if add_hint and meta.original_filename.startswith("file_"):
-        response["hint"] = (
-            "Tip: Use 'curl -T file http://server/your-file-name' "
-            "to preserve original filename (put desired name in URL)."
-        )
-
-    return response
 
 
 async def _upload_file_post(
