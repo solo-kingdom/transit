@@ -30,15 +30,12 @@ COPY config/pip.conf /root/.pip/pip.conf
 COPY config/Caddyfile /etc/caddy/Caddyfile
 COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# 复制项目依赖文件
-COPY pyproject.toml ./
+# 复制项目文件（pip install -e . 需要这些文件）
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
 
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -e .
-
-# 复制项目代码
-COPY src/ ./src/
-COPY README.md ./
 
 # 复制管理脚本
 COPY scripts/ ./scripts/
