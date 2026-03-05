@@ -65,7 +65,7 @@ fi
 # 测试 3.5: 查询文件元信息
 echo ""
 echo "3.5️⃣  测试查询文件元信息..."
-META_RESPONSE=$(curl -s "$HOST/testuser/$FILENAME/meta")
+META_RESPONSE=$(curl -s "$HOST/$FILENAME/testuser/meta")
 
 if echo "$META_RESPONSE" | grep -q "upload_time" && \
    echo "$META_RESPONSE" | grep -q "remote_address" && \
@@ -81,7 +81,7 @@ fi
 # 测试 4: 上传文件（POST 方法）
 echo ""
 echo "4️⃣  测试文件上传（POST 方法）..."
-POST_RESPONSE=$(curl -s -X POST -F "file=@$TEST_FILE" "$HOST/testuser2")
+POST_RESPONSE=$(curl -s -X POST -F "file=@$TEST_FILE" "$HOST")
 POST_DOWNLOAD_URL=$(echo "$POST_RESPONSE" | grep -o '"download_url":"[^"]*"' | cut -d'"' -f4)
 POST_DOWNLOAD_PATH=$(echo "$POST_RESPONSE" | grep -o '"download_path":"[^"]*"' | cut -d'"' -f4)
 
@@ -114,5 +114,5 @@ echo "================================"
 echo "🎉 所有测试通过！"
 echo ""
 echo "快速使用示例:"
-echo "  上传: curl --upload-file myfile.txt $HOST/username"
-echo "  下载: wget $HOST/username/encoded_filename"
+echo "  上传: curl --upload-file myfile.txt $HOST"
+echo "  下载: wget \$DOWNLOAD_URL"

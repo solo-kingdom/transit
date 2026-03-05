@@ -26,8 +26,4 @@ class FileMeta(BaseModel):
     # 文件大小（字节）
     file_size: int
 
-    # 用户名
-    username: str
-
-    # 文件路径（相对路径）
-    file_path: str
+    # （已移除 username 和按用户名分目录的概念）

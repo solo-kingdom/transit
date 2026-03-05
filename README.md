@@ -126,15 +126,15 @@ uvicorn transit.main:app --reload --host 0.0.0.0 --port 8000
 使用 curl 上传文件：
 
 ```bash
-curl --upload-file /path/to/file http://localhost:8000/username
+curl --upload-file /path/to/file http://localhost:8000
 ```
 
 返回示例：
 ```json
 {
   "message": "File uploaded successfully",
-  "download_url": "http://192.168.1.100:8000/username/AbCdEf123456.txt",
-  "download_path": "/username/AbCdEf123456.txt",
+  "download_url": "http://192.168.1.100:8000/AbCdEf123456.txt/file.txt",
+  "download_path": "/AbCdEf123456.txt/file.txt",
   "filename": "AbCdEf123456.txt",
   "original_filename": "file.txt",
   "encoded_filename": "AbCdEf123456.txt",
@@ -143,9 +143,7 @@ curl --upload-file /path/to/file http://localhost:8000/username
     "original_filename": "file.txt",
     "upload_time": "2026-03-05T13:30:00.123456",
     "remote_address": "192.168.1.50",
-    "file_size": 1024,
-    "username": "username",
-    "file_path": "username/AbCdEf123456.txt"
+    "file_size": 1024
   }
 }
 ```
@@ -156,20 +154,18 @@ curl --upload-file /path/to/file http://localhost:8000/username
 
 ### 下载文件
 
-使用 wget 或 curl 下载文件（会自动使用原始文件名）：
+使用 wget 或 curl 下载文件：
 
 ```bash
-# 推荐：wget，使用服务器返回的原始文件名
-wget --content-disposition http://localhost:8000/username/AbCdEf123456.txt
+# wget：直接使用 URL 末尾的原始文件名
+wget http://localhost:8000/AbCdEf123456.txt/file.txt
 ```
 
 或
 
 ```bash
-# 推荐：curl，使用服务器返回的原始文件名
-# -O: 使用远程文件名保存
-# -J: 使用 Content-Disposition 中的文件名（这里会是原始文件名）
-curl -OJ http://localhost:8000/username/AbCdEf123456.txt
+# curl：直接使用 URL 末尾的原始文件名
+curl -O http://localhost:8000/AbCdEf123456.txt/file.txt
 ```
 
 ### 查询文件元信息
@@ -177,7 +173,7 @@ curl -OJ http://localhost:8000/username/AbCdEf123456.txt
 获取文件的详细元信息：
 
 ```bash
-curl http://localhost:8000/username/AbCdEf123456.txt/meta
+curl http://localhost:8000/AbCdEf123456.txt/file.txt/meta
 ```
 
 返回示例：
@@ -198,10 +194,10 @@ curl http://localhost:8000/username/AbCdEf123456.txt/meta
 
 ### API 端点
 
-- `POST /{username}` - 上传文件（multipart/form-data 格式）
-- `PUT /{username}` - 上传文件（原始文件内容，支持 curl --upload-file）
-- `GET /{username}/{encoded_filename}` - 下载文件
-- `GET /{username}/{encoded_filename}/meta` - 获取文件元信息
+- `POST /` - 上传文件（multipart/form-data 格式）
+- `PUT /` 和 `PUT /{path}` - 上传文件（原始文件内容，支持 curl --upload-file）
+- `GET /{encoded_filename}/{original_filename}` - 下载文件
+- `GET /{encoded_filename}/{original_filename}/meta` - 获取文件元信息
 - `GET /` - 服务信息
 - `GET /health` - 健康检查
 

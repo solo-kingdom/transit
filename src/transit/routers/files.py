@@ -1,9 +1,7 @@
 """
-文件路由模块
-处理文件上传和下载请求
+文件路由模块：处理文件上传、下载和元信息查询
 """
 
-import re
 from urllib.parse import quote
 from fastapi import APIRouter, File, UploadFile, HTTPException, Path as PathParam, Request, Depends
 from fastapi.responses import Response
@@ -13,31 +11,7 @@ from ..auth import verify_write_token, verify_read_token
 from ..config import settings
 from ..services.file_service import file_service
 
-# 创建路由器
 router = APIRouter()
-
-
-def sanitize_username(username: str) -> str:
-    """
-    清理用户名，只保留字母、数字、下划线和连字符
-
-    Args:
-        username: 原始用户名
-
-    Returns:
-        清理后的用户名
-    """
-    # 移除路径分隔符，处理多级路径
-    username = username.replace("/", "_").replace("\\", "_")
-
-    # 只保留字母、数字、下划线和连字符
-    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", username)
-
-    # 如果清理后为空，使用 anonymous
-    if not sanitized:
-        return "anonymous"
-
-    return sanitized
 
 
 def get_download_base_url(request: Request) -> str:
@@ -98,9 +72,43 @@ def get_client_ip(request: Request) -> str:
     return "unknown"
 
 
+def _build_upload_response(
+    request: Request,
+    encoded_filename: str,
+    meta,
+    *,
+    add_hint: bool = False,
+) -> dict:
+    """
+    构造统一的上传成功响应结构
+    """
+    # 下载 URL: /{encoded_filename}/{original_filename}
+    original_for_path = quote(meta.original_filename, safe="")
+    download_url = f"{get_download_base_url(request)}/{encoded_filename}/{original_for_path}"
+
+    response: dict = {
+        "message": "File uploaded successfully",
+        "download_url": download_url,
+        "download_path": f"/{encoded_filename}/{original_for_path}",
+        # 保持向后兼容：filename 仍然是编码后的文件名
+        "filename": encoded_filename,
+        # 显式提供编码后的文件名和原始文件名
+        "encoded_filename": encoded_filename,
+        "original_filename": meta.original_filename,
+        "meta": meta.model_dump(mode="json"),
+    }
+
+    if add_hint and meta.original_filename.startswith("file_"):
+        response["hint"] = (
+            "Tip: Use 'curl -T file http://server/your-file-name' "
+            "to preserve original filename (put desired name in URL)."
+        )
+
+    return response
+
+
 async def _upload_file_post(
     request: Request,
-    username: str,
     file: UploadFile,
     token: Optional[str],
 ):
@@ -109,7 +117,6 @@ async def _upload_file_post(
 
     Args:
         request: 请求对象
-        username: 用户名
         file: 上传的文件
         token: 认证 token（如果启用认证）
 
@@ -117,38 +124,21 @@ async def _upload_file_post(
         包含完整下载 URL 的响应
     """
     try:
-        # 清理用户名
-        username = sanitize_username(username)
-
         # 读取文件内容
         content = await file.read()
 
         # 获取客户端 IP
         remote_address = get_client_ip(request)
 
-        # 保存文件
+        # 保存文件（不再区分用户名）
         encoded_filename, meta = file_service.save_file(
-            username=username,
             file_content=content,
             original_filename=file.filename or "unnamed",
             remote_address=remote_address,
         )
 
-        # 构造下载 URL（完整 URL）
-        download_url = f"{get_download_base_url(request)}/{username}/{encoded_filename}"
-
-        # 返回包含原始文件名和编码文件名的信息
-        return {
-            "message": "File uploaded successfully",
-            "download_url": download_url,
-            "download_path": f"/{username}/{encoded_filename}",
-            # 保持向后兼容：filename 仍然是编码后的文件名
-            "filename": encoded_filename,
-            # 显式提供编码后的文件名和原始文件名
-            "encoded_filename": encoded_filename,
-            "original_filename": meta.original_filename,
-            "meta": meta.model_dump(mode="json"),
-        }
+        # 构造统一的上传成功响应
+        return _build_upload_response(request, encoded_filename, meta, add_hint=False)
 
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
@@ -157,50 +147,29 @@ async def _upload_file_post(
 
 
 @router.post("/")
-async def upload_file_post_anonymous(
-    request: Request,
-    file: UploadFile = File(..., description="要上传的文件"),
-    token: Optional[str] = Depends(verify_write_token),
-):
-    """
-    使用 POST 方法上传文件到 anonymous 用户（multipart/form-data 格式）
-
-    Args:
-        request: 请求对象
-        file: 上传的文件
-        token: 认证 token（如果启用认证）
-
-    Returns:
-        包含完整下载 URL 的响应
-    """
-    return await _upload_file_post(request, "anonymous", file, token)
-
-
-@router.post("/{username:path}")
 async def upload_file_post(
     request: Request,
-    username: str = PathParam(..., description="用户名"),
     file: UploadFile = File(..., description="要上传的文件"),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
     使用 POST 方法上传文件（multipart/form-data 格式）
 
+    已移除用户名逻辑，统一走单一命名空间。
+
     Args:
         request: 请求对象
-        username: 用户名
         file: 上传的文件
         token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应
     """
-    return await _upload_file_post(request, username, file, token)
+    return await _upload_file_post(request, file, token)
 
 
 async def _upload_file_put(
     request: Request,
-    username: str,
     token: Optional[str],
     filename_from_path: Optional[str] = None,
 ):
@@ -209,7 +178,6 @@ async def _upload_file_put(
 
     Args:
         request: 请求对象
-        username: 用户名
         token: 认证 token（如果启用认证）
         filename_from_path: 从 URL 路径中提取的文件名（可选）
 
@@ -217,13 +185,10 @@ async def _upload_file_put(
         包含完整下载 URL 的响应
     """
     try:
-        # 清理用户名
-        username = sanitize_username(username)
-
         # 读取原始文件内容
         content = await request.body()
 
-        # 确定原始文件名（优先级：路径 > Content-Disposition > 基于时间戳）
+        # 确定原始文件名（优先级：路径 > Content-Disposition > URL 最后一段 > 基于时间戳）
         original_filename = None
 
         # 1. 优先使用 URL 路径中的文件名
@@ -237,7 +202,17 @@ async def _upload_file_put(
                 if len(parts) > 1:
                     original_filename = parts[1].strip("\"'")
 
-            # 3. 如果仍然没有文件名，使用基于时间戳的默认文件名
+            # 3. 如果仍然没有文件名，尝试从 URL 最后一段推断（例如：curl -T file http://server/file.log）
+            if not original_filename or original_filename == "unnamed":
+                # request.url.path 形如 "/apollo.log" 或 "/logs/apollo.log"
+                path = request.url.path or ""
+                last_segment = path.strip("/").split("/")[-1] if path.strip("/") else ""
+
+                # 如果最后一段看起来像带扩展名的文件（包含 "."），则作为原始文件名
+                if last_segment and "." in last_segment:
+                    original_filename = last_segment
+
+            # 4. 如果仍然没有文件名，使用基于时间戳的默认文件名
             if not original_filename or original_filename == "unnamed":
                 from datetime import datetime
 
@@ -247,37 +222,20 @@ async def _upload_file_put(
         # 获取客户端 IP
         remote_address = get_client_ip(request)
 
-        # 保存文件
+        # 保存文件（不再区分用户名）
         encoded_filename, meta = file_service.save_file(
-            username=username,
             file_content=content,
             original_filename=original_filename,
             remote_address=remote_address,
         )
 
-        # 构造下载 URL（完整 URL）
-        download_url = f"{get_download_base_url(request)}/{username}/{encoded_filename}"
-
-        # 构建响应
-        response_data = {
-            "message": "File uploaded successfully",
-            "download_url": download_url,
-            "download_path": f"/{username}/{encoded_filename}",
-            # 保持向后兼容：filename 仍然是编码后的文件名
-            "filename": encoded_filename,
-            # 显式提供编码后的文件名和原始文件名
-            "encoded_filename": encoded_filename,
-            "original_filename": meta.original_filename,
-            "meta": meta.model_dump(mode="json"),
-        }
-
-        # 如果使用了默认文件名，添加提示信息
-        if original_filename.startswith("file_"):
-            response_data["hint"] = (
-                "Tip: Use 'curl -T file http://server/username/' (with trailing slash) to preserve original filename"
-            )
-
-        return response_data
+        # 构造响应（PUT 方式需要在使用默认文件名时附加 hint）
+        return _build_upload_response(
+            request,
+            encoded_filename,
+            meta,
+            add_hint=original_filename.startswith("file_"),
+        )
 
     except ValueError as e:
         raise HTTPException(status_code=413, detail=str(e))
@@ -286,87 +244,87 @@ async def _upload_file_put(
 
 
 @router.put("/")
-async def upload_file_put_anonymous(
+async def upload_file_put_root(
     request: Request,
-    token: Optional[str] = Depends(verify_write_token),
-):
-    """
-    使用 PUT 方法上传文件到 anonymous 用户（原始文件内容）
-
-    Args:
-        request: 请求对象
-        token: 认证 token（如果启用认证）
-
-    Returns:
-        包含完整下载 URL 的响应
-    """
-    return await _upload_file_put(request, "anonymous", token)
-
-
-@router.put("/{username:path}")
-async def upload_file_put(
-    request: Request,
-    username: str = PathParam(..., description="用户名"),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
     使用 PUT 方法上传文件（原始文件内容）
-    支持 curl --upload-file 命令
+
+    已移除用户名逻辑，统一走单一命名空间。
+    当使用 `curl --upload-file` 时，可以写成：
+        curl --upload-file file.log http://server/file.log
 
     Args:
         request: 请求对象
-        username: 用户名，可能包含文件名路径（如 wii/apollo.log）
         token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应
     """
-    # 从路径中提取用户名和文件名
-    # curl -T file.txt http://server/username -> username: "username", filename: None
-    # curl -T file.txt http://server/username/file.txt -> username: "username", filename: "file.txt"
-    path_parts = username.split("/", 1)
+    return await _upload_file_put(request, token)
 
-    if len(path_parts) == 2:
-        # 路径包含文件名
-        actual_username = path_parts[0]
-        filename_from_path = path_parts[1]
+
+@router.put("/{path:path}")
+async def upload_file_put(
+    request: Request,
+    path: str = PathParam(..., description="文件路径（用来推断文件名，可选）"),
+    token: Optional[str] = Depends(verify_write_token),
+):
+    """
+    使用 PUT 方法上传文件（原始文件内容）
+    支持 curl --upload-file 命令，且移除了 username 的语义，只保留“文件名”语义。
+
+    Args:
+        request: 请求对象
+        path: 请求路径（例如 apollo.log 或 logs/apollo.log）
+        token: 认证 token（如果启用认证）
+
+    Returns:
+        包含完整下载 URL 的响应
+    """
+    # 整个 path 只用来推断原始文件名，与存储路径无关
+    # 例如:
+    #   curl -T file.log http://server/file.log         -> original_filename: file.log
+    #   curl -T file.log http://server/logs/file.log    -> original_filename: file.log
+    #   curl -T file.log http://server/                 -> original_filename: 基于时间戳的默认名
+    if path:
+        filename_from_path = path.split("/")[-1]
     else:
-        # 路径只有用户名
-        actual_username = username
         filename_from_path = None
 
-    return await _upload_file_put(request, actual_username, token, filename_from_path)
+    return await _upload_file_put(request, token, filename_from_path)
 
 
-@router.get("/{username}/{encoded_filename}")
+@router.get("/{encoded_filename}/{original_filename}")
 async def download_file(
-    username: str = PathParam(..., description="用户名"),
     encoded_filename: str = PathParam(..., description="编码后的文件名"),
+    original_filename: str = PathParam(..., description="原始文件名（仅用于美化 URL）"),
     token: Optional[str] = Depends(verify_read_token),
 ):
     """
     下载文件
 
     Args:
-        username: 用户名
         encoded_filename: 编码后的文件名
+        original_filename: 原始文件名（仅用于美化 URL，不参与查找）
         token: 认证 token（如果启用认证）
 
     Returns:
         文件内容
     """
     # 检查文件是否存在
-    if not file_service.file_exists(username, encoded_filename):
+    if not file_service.file_exists(encoded_filename):
         raise HTTPException(status_code=404, detail="File not found")
 
     # 读取文件内容
-    content = file_service.read_file(username, encoded_filename)
+    content = file_service.read_file(encoded_filename)
 
     if content is None:
         raise HTTPException(status_code=404, detail="File not found")
 
     # 读取元信息以获取原始文件名
-    meta = file_service.get_meta(username, encoded_filename)
+    meta = file_service.get_meta(encoded_filename)
 
     # 确定要使用的文件名
     if meta and meta.original_filename:
@@ -396,17 +354,16 @@ async def download_file(
     )
 
 
-@router.get("/{username}/{encoded_filename}/meta")
+@router.get("/{encoded_filename}/{original_filename}/meta")
 async def get_file_meta(
-    username: str = PathParam(..., description="用户名"),
     encoded_filename: str = PathParam(..., description="编码后的文件名"),
+    original_filename: str = PathParam(..., description="原始文件名（仅用于美化 URL）"),
     token: Optional[str] = Depends(verify_read_token),
 ):
     """
     获取文件元信息
 
     Args:
-        username: 用户名
         encoded_filename: 编码后的文件名
         token: 认证 token（如果启用认证）
 
@@ -414,11 +371,11 @@ async def get_file_meta(
         文件元信息（包括上传时间、原始文件名、上传者 IP 等）
     """
     # 先检查文件是否存在
-    if not file_service.file_exists(username, encoded_filename):
+    if not file_service.file_exists(encoded_filename):
         raise HTTPException(status_code=404, detail="File not found")
 
     # 获取元信息
-    meta = file_service.get_meta(username, encoded_filename)
+    meta = file_service.get_meta(encoded_filename)
 
     if meta is None:
         raise HTTPException(status_code=404, detail="File metadata not found")

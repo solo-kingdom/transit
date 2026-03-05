@@ -47,52 +47,34 @@ class FileService:
 
         return encoded_filename
 
-    def get_user_dir(self, username: str) -> Path:
+    def get_file_path(self, encoded_filename: str) -> Path:
         """
-        获取用户目录路径
+        获取文件的完整路径（不再区分用户名）
 
         Args:
-            username: 用户名
-
-        Returns:
-            用户目录路径
-        """
-        user_dir = self.data_dir / username
-        user_dir.mkdir(parents=True, exist_ok=True)
-        return user_dir
-
-    def get_file_path(self, username: str, encoded_filename: str) -> Path:
-        """
-        获取文件的完整路径
-
-        Args:
-            username: 用户名
             encoded_filename: 编码后的文件名
 
         Returns:
             文件完整路径
         """
-        return self.get_user_dir(username) / encoded_filename
+        return self.data_dir / encoded_filename
 
-    def get_meta_path(self, username: str, encoded_filename: str) -> Path:
+    def get_meta_path(self, encoded_filename: str) -> Path:
         """
-        获取元信息文件的完整路径
+        获取元信息文件的完整路径（不再区分用户名）
 
         Args:
-            username: 用户名
             encoded_filename: 编码后的文件名
 
         Returns:
             元信息文件完整路径
         """
-        user_dir = self.get_user_dir(username)
         # 元信息文件名格式：.meta.{encoded_filename}.json
         meta_filename = f".meta.{encoded_filename}.json"
-        return user_dir / meta_filename
+        return self.data_dir / meta_filename
 
     def save_meta(
         self,
-        username: str,
         encoded_filename: str,
         original_filename: str,
         file_size: int,
@@ -102,7 +84,6 @@ class FileService:
         保存文件元信息
 
         Args:
-            username: 用户名
             encoded_filename: 编码后的文件名
             original_filename: 原始文件名
             file_size: 文件大小
@@ -117,11 +98,9 @@ class FileService:
             upload_time=datetime.now(),
             remote_address=remote_address,
             file_size=file_size,
-            username=username,
-            file_path=f"{username}/{encoded_filename}",
         )
 
-        meta_path = self.get_meta_path(username, encoded_filename)
+        meta_path = self.get_meta_path(encoded_filename)
 
         # 保存为 JSON 文件
         with open(meta_path, "w", encoding="utf-8") as f:
@@ -129,18 +108,17 @@ class FileService:
 
         return meta
 
-    def get_meta(self, username: str, encoded_filename: str) -> Optional[FileMeta]:
+    def get_meta(self, encoded_filename: str) -> Optional[FileMeta]:
         """
         读取文件元信息
 
         Args:
-            username: 用户名
             encoded_filename: 编码后的文件名
 
         Returns:
             文件元信息对象，如果不存在则返回 None
         """
-        meta_path = self.get_meta_path(username, encoded_filename)
+        meta_path = self.get_meta_path(encoded_filename)
 
         if not meta_path.exists():
             return None
@@ -157,7 +135,6 @@ class FileService:
 
     def save_file(
         self,
-        username: str,
         file_content: bytes,
         original_filename: str,
         remote_address: str,
@@ -166,7 +143,6 @@ class FileService:
         保存上传的文件
 
         Args:
-            username: 用户名
             file_content: 文件内容
             original_filename: 原始文件名
             remote_address: 上传者 IP 地址
@@ -181,16 +157,13 @@ class FileService:
         if len(file_content) > self.max_file_size:
             raise ValueError(f"File size exceeds maximum limit of {self.max_file_size} bytes")
 
-        # 生成编码文件名
+        # 生成编码文件名，并确保唯一（UUID 冲突概率极低，这里只是防御性检查）
         encoded_filename = self.generate_encoded_filename(original_filename)
+        file_path = self.get_file_path(encoded_filename)
 
-        # 获取文件路径
-        file_path = self.get_file_path(username, encoded_filename)
-
-        # 确保文件名唯一（虽然概率极低，但还是要检查）
         while file_path.exists():
             encoded_filename = self.generate_encoded_filename(original_filename)
-            file_path = self.get_file_path(username, encoded_filename)
+            file_path = self.get_file_path(encoded_filename)
 
         # 保存文件
         with open(file_path, "wb") as f:
@@ -202,7 +175,6 @@ class FileService:
 
         # 保存元信息
         meta = self.save_meta(
-            username=username,
             encoded_filename=encoded_filename,
             original_filename=original_filename,
             file_size=len(file_content),
@@ -211,18 +183,17 @@ class FileService:
 
         return encoded_filename, meta
 
-    def read_file(self, username: str, encoded_filename: str) -> Optional[bytes]:
+    def read_file(self, encoded_filename: str) -> Optional[bytes]:
         """
         读取文件内容
 
         Args:
-            username: 用户名
             encoded_filename: 编码后的文件名
 
         Returns:
             文件内容，如果文件不存在则返回 None
         """
-        file_path = self.get_file_path(username, encoded_filename)
+        file_path = self.get_file_path(encoded_filename)
 
         if not file_path.exists():
             return None
@@ -230,18 +201,17 @@ class FileService:
         with open(file_path, "rb") as f:
             return f.read()
 
-    def file_exists(self, username: str, encoded_filename: str) -> bool:
+    def file_exists(self, encoded_filename: str) -> bool:
         """
         检查文件是否存在
 
         Args:
-            username: 用户名
             encoded_filename: 编码后的文件名
 
         Returns:
             文件是否存在
         """
-        file_path = self.get_file_path(username, encoded_filename)
+        file_path = self.get_file_path(encoded_filename)
         return file_path.exists() and file_path.is_file()
 
     def _remove_exec_permission(self, file_path: Path) -> None:
