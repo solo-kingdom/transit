@@ -3,7 +3,6 @@
 # 从 VERSION 文件读取版本号
 VERSION := $(shell cat VERSION 2>/dev/null || echo "0.0.1")
 IMAGE_NAME := sunzhenkai/transit
-
 # 默认目标
 help:
 	@echo "Transit 文件中转服务 - Makefile 命令"
@@ -114,4 +113,5 @@ docker-push: build docker-tag
 	@echo "镜像地址："
 	@echo "  - docker pull $(IMAGE_NAME):$(VERSION)"
 	@echo "  - docker pull $(IMAGE_NAME):latest"
+
 
