@@ -17,7 +17,7 @@ def get_data_dir() -> Path:
     # 从环境变量或配置中获取
     import os
 
-    data_dir = os.getenv("DATA_DIR", "./data")
+    data_dir = os.getenv("DATA_DIR", "/app/transit/data")
     return Path(data_dir)
 
 

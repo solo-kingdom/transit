@@ -28,28 +28,33 @@
 ### 使用 Makefile（最简单）
 
 1. 克隆项目
+
 ```bash
 git clone <repository-url>
 cd transit
 ```
 
 2. 构建并启动服务
+
 ```bash
 make build
 make up
 ```
 
 3. 查看日志
+
 ```bash
 make logs
 ```
 
 4. 停止服务
+
 ```bash
 make down
 ```
 
 **其他常用命令**：
+
 - `make help` - 查看所有可用命令
 - `make test` - 启动测试服务（前台运行）
 - `make restart` - 重启服务
@@ -58,17 +63,20 @@ make down
 ### 使用 Docker Compose（推荐）
 
 1. 克隆项目
+
 ```bash
 git clone <repository-url>
 cd transit
 ```
 
 2. 启动服务
+
 ```bash
 docker-compose up -d
 ```
 
 3. 查看日志
+
 ```bash
 docker-compose logs -f
 ```
@@ -76,11 +84,13 @@ docker-compose logs -f
 ### 使用 Docker
 
 1. 构建镜像
+
 ```bash
 docker build -t transit:latest .
 ```
 
 2. 运行容器
+
 ```bash
 docker run -d \
   --name transit \
@@ -92,6 +102,7 @@ docker run -d \
 ```
 
 **端口说明**：
+
 - `8000`: Caddy 写端口（仅允许 POST/PUT 方法）
 - `8001`: Caddy 读端口（仅允许 GET/HEAD 方法）
 - `8080`: 读写端口（同时支持所有方法）
@@ -99,22 +110,26 @@ docker run -d \
 ### 本地开发
 
 1. 安装依赖
+
 ```bash
 pip install -e ".[dev]"
 ```
 
 2. 配置环境变量（可选）
+
 ```bash
 cp .env.example .env
 # 编辑 .env 文件配置参数
 ```
 
 3. 运行开发服务器
+
 ```bash
 fastapi dev src/transit/main.py
 ```
 
 或使用 uvicorn：
+
 ```bash
 uvicorn transit.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -130,6 +145,7 @@ curl --upload-file /path/to/file http://localhost:8000
 ```
 
 返回示例：
+
 ```json
 {
   "download_url": "http://192.168.1.100:8000/AbCdEf123456.txt/file.txt"
@@ -137,7 +153,9 @@ curl --upload-file /path/to/file http://localhost:8000
 ```
 
 **注意**：
+
 - `download_url` 包含完整的 URL（包含自动检测的本机 IP 或配置的 host）
+
 ### 下载文件
 
 使用 wget 或 curl 下载文件：
@@ -163,6 +181,7 @@ curl http://localhost:8000/AbCdEf123456.txt/file.txt/meta
 ```
 
 返回示例：
+
 ```json
 {
   "message": "File metadata retrieved successfully",
@@ -187,25 +206,25 @@ curl http://localhost:8000/AbCdEf123456.txt/file.txt/meta
 - `GET /` - 服务信息
 - `GET /health` - 健康检查
 
-
 ## 配置
 
 ### 环境变量
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `APP_NAME` | 应用名称 | File Transit Service |
-| `APP_VERSION` | 应用版本 | 0.1.0 |
-| `DATA_DIR` | 数据存储路径 | ./data |
-| `PORT` | 服务端口（内部） | 8000 |
-| `DOWNLOAD_HOST` | 下载 URL 的主机地址 | 自动检测本机 IP |
-| `MAX_FILE_SIZE` | 最大文件大小（字节） | 5368709120 (5GB) |
-| `REMOVE_EXEC_PERMISSION` | 移除执行权限 | true |
-| `AUTH_ENABLED` | 是否启用认证 | false |
-| `READ_TOKENS` | 读 token 列表（逗号分隔） | - |
-| `WRITE_TOKENS` | 写 token 列表（逗号分隔） | - |
+| 变量名                   | 说明                      | 默认值               |
+| ------------------------ | ------------------------- | -------------------- |
+| `APP_NAME`               | 应用名称                  | File Transit Service |
+| `APP_VERSION`            | 应用版本                  | 0.1.0                |
+| `DATA_DIR`               | 数据存储路径              | /app/transit/data    |
+| `PORT`                   | 服务端口（内部）          | 8000                 |
+| `DOWNLOAD_HOST`          | 下载 URL 的主机地址       | 自动检测本机 IP      |
+| `MAX_FILE_SIZE`          | 最大文件大小（字节）      | 5368709120 (5GB)     |
+| `REMOVE_EXEC_PERMISSION` | 移除执行权限              | true                 |
+| `AUTH_ENABLED`           | 是否启用认证              | false                |
+| `READ_TOKENS`            | 读 token 列表（逗号分隔） | -                    |
+| `WRITE_TOKENS`           | 写 token 列表（逗号分隔） | -                    |
 
 **端口说明**：
+
 - 镜像内部 transit 服务监听 `127.0.0.1:8000`
 - Caddy 作为反向代理，暴露三个端口：
   - `8000`: 写端口（仅允许 POST/PUT）
@@ -213,6 +232,7 @@ curl http://localhost:8000/AbCdEf123456.txt/file.txt/meta
   - `8080`: 读写端口（同时支持所有方法）
 
 **DOWNLOAD_HOST 配置说明**：
+
 - 如果不设置，系统会自动检测本机 IP 地址
 - 可以设置为域名（如 `example.com`）或 IP 地址（如 `192.168.1.100`）
 - 在容器环境或反向代理后，建议显式设置此参数
@@ -235,6 +255,7 @@ curl -H "Authorization: Bearer read123" http://localhost:8000/user/filename
 ```
 
 **认证说明**：
+
 - `READ_TOKENS`：用于下载文件和查询元信息
 - `WRITE_TOKENS`：用于上传文件
 - 多个 token 用逗号分隔
@@ -245,19 +266,19 @@ curl -H "Authorization: Bearer read123" http://localhost:8000/user/filename
 服务默认启用读写分离，通过 Caddy 反向代理实现：
 
 **端口说明**：
+
 - **8000 端口（写端口）**：仅允许 POST/PUT 方法
   - 用于上传文件
   - 自动拒绝 GET/HEAD 请求（除了 /health 和 / 路径）
-  
 - **8001 端口（读端口）**：仅允许 GET/HEAD 方法
   - 用于下载文件和查询元信息
   - 自动拒绝 POST/PUT 请求
-  
 - **8080 端口（读写端口）**：同时支持所有方法
   - 适用于需要完整功能的场景
   - 不限制请求方法
 
 **使用示例**：
+
 ```bash
 # 使用写端口上传文件
 curl --upload-file file.txt http://localhost:8000/user
