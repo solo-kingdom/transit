@@ -44,14 +44,14 @@ COPY scripts/ ./scripts/
 RUN mkdir -p /app/data /var/log/supervisor
 
 # 暴露端口
-# 8000: Caddy 写端口（仅 POST/PUT）
-# 8001: Caddy 读端口（仅 GET/HEAD）
-# 8080: 读写端口（同时支持读写）
-EXPOSE 8000 8001 8080
+# 9201: 读端口（仅 GET/HEAD）
+# 9202: 写端口（仅 POST/PUT）
+# 9200: 服务端口（同时支持读写）
+EXPOSE 9201 9202 9200
 
-# 健康检查
+# 健康检查（访问后端服务）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c "import httpx; httpx.get('http://127.0.0.1:8000/health')" || exit 1
+  CMD python -c "import httpx; httpx.get('http://127.0.0.1:9000/health')" || exit 1
 
 # 使用 supervisor 启动服务
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

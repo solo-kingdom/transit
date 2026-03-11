@@ -14,8 +14,13 @@ docker-compose up -d
 
 ```bash
 docker build -t transit:latest .
-docker run -d -p 8000:8000 -v $(pwd)/data:/app/data transit:latest
+docker run -d -p 9201:9201 -p 9202:9202 -p 9200:9200 -v $(pwd)/data:/app/data transit:latest
 ```
+
+**端口说明**：
+- `9200`: 服务端口（同时支持读写，推荐使用）
+- `9201`: 读端口（仅 GET/HEAD）
+- `9202`: 写端口（仅 POST/PUT）
 
 ### 方式 3: 本地开发
 
@@ -32,20 +37,29 @@ fastapi dev src/transit/main.py
 
 ## 文件上传
 
+**注意**：以下示例使用端口 `8000`（本地开发）。Docker 部署请使用 `9200`（服务端口）或 `9202`（写端口）。
+
 ### 方式 1: 使用 curl --upload-file（推荐）
 
 ```bash
-# 上传文件
+# 上传文件（本地开发）
 curl --upload-file myfile.txt http://localhost:8000
+
+# 上传文件（Docker 部署）
+curl --upload-file myfile.txt http://localhost:9200
+
 # 返回示例（简化）
-{"download_url":"http://localhost:8000/AbCdEf123456/myfile.txt"}
+{"download_url":"http://localhost:9200/AbCdEf123456/myfile.txt"}
 ```
 
 ### 方式 2: 使用 curl POST 方法
 
 ```bash
-# 上传文件
+# 上传文件（本地开发）
 curl -X POST -F "file=@myfile.txt" http://localhost:8000
+
+# 上传文件（Docker 部署）
+curl -X POST -F "file=@myfile.txt" http://localhost:9200
 
 # 返回示例
 {"message":"File uploaded successfully","download_path":"/username/XyZ789.txt","filename":"XyZ789.txt"}
@@ -62,10 +76,17 @@ curl -X POST -F "file=@myfile.txt" http://localhost:8000
 ```python
 import requests
 
-# 上传文件
+# 上传文件（本地开发）
 with open('myfile.txt', 'rb') as f:
     response = requests.post(
         'http://localhost:8000',
+        files={'file': f}
+    )
+
+# 上传文件（Docker 部署）
+with open('myfile.txt', 'rb') as f:
+    response = requests.post(
+        'http://localhost:9200',
         files={'file': f}
     )
     
@@ -75,24 +96,32 @@ print(response.json())
 
 ## 文件下载
 
+**注意**：以下示例使用端口 `8000`（本地开发）。Docker 部署请使用 `9200`（服务端口）或 `9201`（读端口）。
+
 ### 方式 1: 使用 wget（推荐）
 
 ```bash
-# 下载文件（URL 末尾已经包含原始文件名）
+# 下载文件（本地开发）
 wget http://localhost:8000/AbCdEf123456/myfile.txt
 
+# 下载文件（Docker 部署）
+wget http://localhost:9200/AbCdEf123456/myfile.txt
+
 # 或指定输出文件名
-wget -O downloaded_file.txt http://localhost:8000/username/AbCdEf123456
+wget -O downloaded_file.txt http://localhost:9200/username/AbCdEf123456
 ```
 
 ### 方式 2: 使用 curl
 
 ```bash
-# 下载文件
+# 下载文件（本地开发）
 curl -O http://localhost:8000/AbCdEf123456/myfile.txt
 
+# 下载文件（Docker 部署）
+curl -O http://localhost:9200/AbCdEf123456/myfile.txt
+
 # 或手动指定输出文件名
-curl -o downloaded_file.txt http://localhost:8000/AbCdEf123456/myfile.txt
+curl -o downloaded_file.txt http://localhost:9200/AbCdEf123456/myfile.txt
 ```
 
 ### 方式 3: 使用 Python
@@ -100,8 +129,11 @@ curl -o downloaded_file.txt http://localhost:8000/AbCdEf123456/myfile.txt
 ```python
 import requests
 
-# 下载文件
+# 下载文件（本地开发）
 response = requests.get('http://localhost:8000/AbCdEf123456/myfile.txt')
+
+# 下载文件（Docker 部署）
+response = requests.get('http://localhost:9200/AbCdEf123456/myfile.txt')
 
 # 保存到本地
 with open('downloaded_file.txt', 'wb') as f:
@@ -149,8 +181,13 @@ wget http://transit.example.com/share/XyZ789AbCdEf
 
 启动服务后，访问以下地址查看交互式 API 文档：
 
+**本地开发**：
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
+
+**Docker 部署**：
+- Swagger UI: http://localhost:9200/docs
+- ReDoc: http://localhost:9200/redoc
 
 ## 常见问题
 

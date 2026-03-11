@@ -3,6 +3,15 @@
 # 快速测试脚本
 # 用于验证文件中转服务是否正常工作
 #
+# 使用方法:
+#   ./test_service.sh                    # 使用默认地址 http://localhost:8000
+#   ./test_service.sh http://localhost:9200  # 指定服务地址（Docker 部署）
+#
+# 端口说明:
+#   - 8000: 本地开发端口
+#   - 9200: Docker 部署服务端口（推荐）
+#   - 9201: Docker 部署读端口
+#   - 9202: Docker 部署写端口
 
 set -e
 

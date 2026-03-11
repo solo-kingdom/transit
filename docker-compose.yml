@@ -6,9 +6,9 @@ services:
     build: .
     container_name: transit
     ports:
-      - "9200:8000" # Caddy 写端口（仅 POST/PUT）
-      - "9201:8001" # Caddy 读端口（仅 GET/HEAD）
-      - "9202:8080" # 读写端口（同时支持读写）
+      - "9201:9201" # Caddy 读端口（仅 GET/HEAD）
+      - "9202:9202" # Caddy 写端口（仅 POST/PUT）
+      - "9200:9200" # 服务端口（同时支持读写）
     volumes:
       - ./data:/app/transit/data
     environment:
@@ -26,7 +26,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import httpx; httpx.get('http://127.0.0.1:8000/health')",
+          "import httpx; httpx.get('http://127.0.0.1:9000/health')",
         ]
       interval: 30s
       timeout: 10s

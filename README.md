@@ -81,6 +81,43 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
+4. 停止服务
+
+```bash
+docker-compose down
+```
+
+**端口说明**：
+
+- `9200`: 服务端口（同时支持读写，推荐使用）
+- `9201`: Caddy 读端口（仅允许 GET/HEAD 方法）
+- `9202`: Caddy 写端口（仅允许 POST/PUT 方法）
+
+**常用操作**：
+
+```bash
+# 查看运行状态
+docker-compose ps
+
+# 重启服务
+docker-compose restart
+
+# 停止并删除容器
+docker-compose down
+
+# 停止并删除容器、网络、镜像
+docker-compose down --rmi all
+
+# 进入容器
+docker exec -it transit bash
+
+# 查看实时日志
+docker-compose logs -f
+
+# 查看最近 100 行日志
+docker-compose logs --tail=100
+```
+
 ### 使用 Docker
 
 1. 构建镜像
@@ -94,18 +131,18 @@ docker build -t transit:latest .
 ```bash
 docker run -d \
   --name transit \
-  -p 8000:8000 \
-  -p 8001:8001 \
-  -p 8080:8080 \
+  -p 9201:9201 \
+  -p 9202:9202 \
+  -p 9200:9200 \
   -v $(pwd)/data:/app/data \
   transit:latest
 ```
 
 **端口说明**：
 
-- `8000`: Caddy 写端口（仅允许 POST/PUT 方法）
-- `8001`: Caddy 读端口（仅允许 GET/HEAD 方法）
-- `8080`: 读写端口（同时支持所有方法）
+- `9200`: 服务端口（同时支持读写，推荐使用）
+- `9201`: 读端口（仅允许 GET/HEAD 方法）
+- `9202`: 写端口（仅允许 POST/PUT 方法）
 
 ### 本地开发
 
@@ -141,14 +178,14 @@ uvicorn transit.main:app --reload --host 0.0.0.0 --port 8000
 使用 curl 上传文件：
 
 ```bash
-curl --upload-file /path/to/file http://localhost:8000
+curl --upload-file /path/to/file http://localhost:9200
 ```
 
 返回示例：
 
 ```json
 {
-  "download_url": "http://192.168.1.100:8000/AbCdEf123456.txt/file.txt"
+  "download_url": "http://192.168.1.100:9200/AbCdEf123456.txt/file.txt"
 }
 ```
 
@@ -162,14 +199,14 @@ curl --upload-file /path/to/file http://localhost:8000
 
 ```bash
 # wget：直接使用 URL 末尾的原始文件名
-wget http://localhost:8000/AbCdEf123456.txt/file.txt
+wget http://localhost:9200/AbCdEf123456.txt/file.txt
 ```
 
 或
 
 ```bash
 # curl：直接使用 URL 末尾的原始文件名
-curl -O http://localhost:8000/AbCdEf123456.txt/file.txt
+curl -O http://localhost:9200/AbCdEf123456.txt/file.txt
 ```
 
 ### 查询文件元信息
@@ -177,7 +214,7 @@ curl -O http://localhost:8000/AbCdEf123456.txt/file.txt
 获取文件的详细元信息：
 
 ```bash
-curl http://localhost:8000/AbCdEf123456.txt/file.txt/meta
+curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
 ```
 
 返回示例：
@@ -225,11 +262,11 @@ curl http://localhost:8000/AbCdEf123456.txt/file.txt/meta
 
 **端口说明**：
 
-- 镜像内部 transit 服务监听 `127.0.0.1:8000`
+- 镜像内部 transit 服务监听 `127.0.0.1:9000`
 - Caddy 作为反向代理，暴露三个端口：
-  - `8000`: 写端口（仅允许 POST/PUT）
-  - `8001`: 读端口（仅允许 GET/HEAD）
-  - `8080`: 读写端口（同时支持所有方法）
+  - `9202`: 写端口（仅允许 POST/PUT）
+  - `9201`: 读端口（仅允许 GET/HEAD）
+  - `9200`: 服务端口（同时支持所有方法）
 
 **DOWNLOAD_HOST 配置说明**：
 
@@ -248,10 +285,10 @@ export READ_TOKENS=read123,read456
 export WRITE_TOKENS=write123,write456
 
 # 上传文件（需要写 token）
-curl -H "Authorization: Bearer write123" --upload-file file.txt http://localhost:8000/user
+curl -H "Authorization: Bearer write123" --upload-file file.txt http://localhost:9200/user
 
 # 下载文件（需要读 token）
-curl -H "Authorization: Bearer read123" http://localhost:8000/user/filename
+curl -H "Authorization: Bearer read123" http://localhost:9200/user/filename
 ```
 
 **认证说明**：
@@ -267,28 +304,29 @@ curl -H "Authorization: Bearer read123" http://localhost:8000/user/filename
 
 **端口说明**：
 
-- **8000 端口（写端口）**：仅允许 POST/PUT 方法
+- **9202 端口（写端口）**：仅允许 POST/PUT 方法
   - 用于上传文件
   - 自动拒绝 GET/HEAD 请求（除了 /health 和 / 路径）
-- **8001 端口（读端口）**：仅允许 GET/HEAD 方法
+- **9201 端口（读端口）**：仅允许 GET/HEAD 方法
   - 用于下载文件和查询元信息
   - 自动拒绝 POST/PUT 请求
-- **8080 端口（读写端口）**：同时支持所有方法
+- **9200 端口（服务端口）**：同时支持所有方法
   - 适用于需要完整功能的场景
   - 不限制请求方法
+  - 推荐使用此端口
 
 **使用示例**：
 
 ```bash
 # 使用写端口上传文件
-curl --upload-file file.txt http://localhost:8000/user
+curl --upload-file file.txt http://localhost:9202/user
 
 # 使用读端口下载文件
-curl http://localhost:8001/user/filename
+curl http://localhost:9201/user/filename
 
-# 使用读写端口（完整功能）
-curl --upload-file file.txt http://localhost:8080/user
-curl http://localhost:8080/user/filename
+# 使用服务端口（完整功能，推荐）
+curl --upload-file file.txt http://localhost:9200/user
+curl http://localhost:9200/user/filename
 ```
 
 ## 项目结构
