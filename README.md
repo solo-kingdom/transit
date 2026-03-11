@@ -196,7 +196,7 @@ curl http://localhost:8000/AbCdEf123456.txt/file.txt/meta
 |--------|------|--------|
 | `APP_NAME` | 应用名称 | File Transit Service |
 | `APP_VERSION` | 应用版本 | 0.1.0 |
-| `DATA_DIR` | 数据存储路径 | ./data |
+| `DATA_DIR` | 数据存储路径 | /app/transit/data |
 | `PORT` | 服务端口（内部） | 8000 |
 | `DOWNLOAD_HOST` | 下载 URL 的主机地址 | 自动检测本机 IP |
 | `MAX_FILE_SIZE` | 最大文件大小（字节） | 5368709120 (5GB) |

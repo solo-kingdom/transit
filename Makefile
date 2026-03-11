@@ -1,4 +1,8 @@
-.PHONY: help build up down restart logs logs-transit logs-caddy logs-files test clean
+.PHONY: help build up down restart logs logs-transit logs-caddy logs-files test clean docker-push docker-tag
+
+# 从 VERSION 文件读取版本号
+VERSION := $(shell cat VERSION 2>/dev/null || echo "0.0.1")
+IMAGE_NAME := sunzhenkai/transit
 
 # 默认目标
 help:
@@ -17,6 +21,8 @@ help:
 	@echo "  logs-files   - 查看容器内日志文件"
 	@echo "  test         - 启动测试服务（前台运行）"
 	@echo "  clean        - 清理未使用的 Docker 资源"
+	@echo "  docker-push  - 构建并推送镜像到 Docker Hub"
+	@echo "  docker-tag    - 给镜像打标签"
 	@echo "  help         - 显示此帮助信息"
 
 # 构建 Docker 镜像
@@ -86,3 +92,26 @@ clean:
 	@echo "🧹 清理未使用的 Docker 资源..."
 	docker system prune -f
 	@echo "✅ 清理完成"
+
+# 给镜像打标签
+docker-tag:
+	@echo "🏷️  给镜像打标签..."
+	docker tag transit-transit:latest $(IMAGE_NAME):$(VERSION)
+	docker tag transit-transit:latest $(IMAGE_NAME):latest
+	@echo "✅ 标签完成"
+	@echo ""
+	@echo "镜像标签："
+	@echo "  - $(IMAGE_NAME):$(VERSION)"
+	@echo "  - $(IMAGE_NAME):latest"
+
+# 构建并推送镜像到 Docker Hub
+docker-push: build docker-tag
+	@echo "🚀 推送镜像到 Docker Hub..."
+	docker push $(IMAGE_NAME):$(VERSION)
+	docker push $(IMAGE_NAME):latest
+	@echo "✅ 推送完成！"
+	@echo ""
+	@echo "镜像地址："
+	@echo "  - docker pull $(IMAGE_NAME):$(VERSION)"
+	@echo "  - docker pull $(IMAGE_NAME):latest"
+

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
 
     # 数据存储路径
-    data_dir: Path = Path("./data")
+    data_dir: Path = Path("/app/transit/data")
 
     # 服务端口（单一端口，读写分离由反向代理控制）
     port: int = 8000
