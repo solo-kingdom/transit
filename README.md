@@ -8,7 +8,8 @@
 - 🐳 **一体化镜像** - Caddy 已集成到镜像中，简化部署
 - 🔐 **Token 认证** - 支持读写分离的 token 认证，可配置多个 token
 - 🎲 **UUID 文件名** - 使用 UUID 生成唯一文件名，保护隐私
-- 🔗 **完整 URL** - 自动生成包含主机地址的完整下载 URL
+- 🔗 **自足链接** - 上传返回带 per-file 访问凭据的完整 URL，拿到链接即可访问，不必再带认证头
+- 📄 **按类型展示** - 文本、图片、音视频与 PDF 在浏览器直接展示或播放，其余触发下载；音视频支持分段请求（Range）
 - 📊 **元信息管理** - 记录文件上传时间、来源 IP、文件大小等元信息
 - 🛠️ **管理工具** - 提供命令行管理工具，支持统计、清理等功能
 - 🛡️ **安全防护** - 自动移除文件执行权限，防止恶意文件
@@ -185,29 +186,38 @@ curl --upload-file /path/to/file http://localhost:9200
 
 ```json
 {
-  "download_url": "http://192.168.1.100:9200/AbCdEf123456.txt/file.txt"
+  "download_url": "http://192.168.1.100:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt"
 }
 ```
 
 **注意**：
 
 - `download_url` 包含完整的 URL（包含自动检测的本机 IP 或配置的 host）
+- 链接中间那一段是该文件专属的**访问凭据**：拿到链接即可取到文件，不需要再带认证头
+- 即便服务开启了认证，这个链接依然直接可用
 
-### 下载文件
+### 访问文件
 
-使用 wget 或 curl 下载文件：
-
-```bash
-# wget：直接使用 URL 末尾的原始文件名
-wget http://localhost:9200/AbCdEf123456.txt/file.txt
-```
-
-或
+把返回的 `download_url` 直接交给浏览器、wget 或 curl 即可：
 
 ```bash
-# curl：直接使用 URL 末尾的原始文件名
-curl -O http://localhost:9200/AbCdEf123456.txt/file.txt
+# wget
+wget http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt
+
+# curl
+curl -O http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt
 ```
+
+**返回处置按内容类型决定**：
+
+| 内容类型 | 行为 |
+| -------- | ---- |
+| `text/*`（含 HTML）、`image/*`（矢量图除外）、`video/*`、`audio/*`、`application/pdf` | 内联展示（浏览器直接渲染 / 播放） |
+| `image/svg+xml`、压缩包及其余二进制 | 触发下载 |
+
+内容类型以**文件名扩展名**为准：上传方在请求里声明的类型不会覆盖它，避免用改扩展名的方式让任意内容变成可执行的 HTML。
+
+音视频支持分段请求（HTTP Range），可在播放器里拖动进度。
 
 ### 查询文件元信息
 
@@ -228,20 +238,71 @@ curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
     "upload_time": "2026-03-05T13:30:00.123456",
     "remote_address": "192.168.1.50",
     "file_size": 1024,
-    "username": "username",
-    "file_path": "username/AbCdEf123456.txt"
+    "content_type": "text/plain"
   }
 }
 ```
+
+**注意**：该接口按编码文件名定位，而上传返回的链接只带访问凭据、不再暴露编码文件名。要查元信息需另行知道编码文件名（例如从服务日志里取）。响应中**不含访问凭据**，避免持有全局读 token 的人把每个文件的凭据读出来。
 
 ### API 端点
 
 - `POST /` - 上传文件（multipart/form-data 格式）
 - `PUT /` 和 `PUT /{path}` - 上传文件（原始文件内容，支持 curl --upload-file）
-- `GET /{encoded_filename}/{original_filename}` - 下载文件
+- `GET /f/{token}/{original_filename}` - 按访问凭据访问文件（上传返回的链接形态）
+- `GET /{encoded_filename}/{original_filename}` - 按编码文件名下载文件（旧链接，仍可用）
 - `GET /{encoded_filename}/{original_filename}/meta` - 获取文件元信息
+- `POST /learn/publish` - 发布学习专题（需写凭据）
+- `GET /learn/` - 学习站索引页（公开，无需凭据）
+- `GET /learn/{category}/` - 学习站分类页（公开）
+- `GET /learn/{category}/{slug}/` - 学习站专题页（公开）
 - `GET /` - 服务信息
 - `GET /health` - 健康检查
+
+### 学习内容托管
+
+服务可以托管 HTML 学习页：发布后即公开可浏览，按分类组织。
+
+**发布**（需写凭据）：
+
+```bash
+curl -X POST http://localhost:9200/learn/publish \
+  -H "Authorization: Bearer <write-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "category": "ai-agent",
+    "slug": "my-article",
+    "title": "文章标题",
+    "desc": "卡片上的一句话摘要",
+    "html": "<!DOCTYPE html><html lang=\"zh-CN\">…</html>",
+    "tags": ["demo"],
+    "date": "2026-10-17",
+    "category_name": "AI Agent 体系",
+    "category_description": "分类简介"
+  }'
+```
+
+返回该专题与所属分类的公开链接：
+
+```json
+{
+  "url": "http://localhost:9200/learn/ai-agent/my-article/",
+  "category_url": "http://localhost:9200/learn/ai-agent/"
+}
+```
+
+`category_name` 只在分类尚不存在时需要；分类已存在时忽略。
+
+**浏览**：打开 `url` 即专题页；`/learn/` 是索引页，`/learn/<category>/` 是分类页。三者都不需要凭据。
+
+**约定与行为**：
+
+- `category` 与 `slug` 必须是 kebab-case（小写字母、数字与连字符）
+- 公开路径一律带尾斜杠；不带尾斜杠的 `/learn/<category>` 会重定向到带尾斜杠版本
+- 发布时会校验分类结构与磁盘内容一致（登记了却没有文件、有文件却没登记，都会拒绝发布），并在写入后用索引页与分类页的渲染结果做一次自检
+- 替换已有专题是原子的；若发布中途失败，原内容会被恢复，不会把已发布的文章弄丢
+- 内容存在数据目录的 `learn/` 子目录下，与普通上传的文件分开
+- **发布即公开**，没有审核环节：写凭据的持有者可以直接在该域名下发布任意 HTML 页面
 
 ## 配置
 
@@ -293,10 +354,11 @@ curl -H "Authorization: Bearer read123" http://localhost:9200/user/filename
 
 **认证说明**：
 
-- `READ_TOKENS`：用于下载文件和查询元信息
+- `READ_TOKENS`：用于按编码文件名下载文件（旧路径）和查询元信息
 - `WRITE_TOKENS`：用于上传文件
 - 多个 token 用逗号分隔
 - token 在请求头中以 `Authorization: Bearer <token>` 格式携带
+- 上传返回的 `/f/{token}/...` 链接**不需要**任何认证头：链接里的凭据就是访问方式
 
 ### 读写分离架构
 

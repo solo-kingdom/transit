@@ -35,6 +35,63 @@ python run_dev.py
 fastapi dev src/transit/main.py
 ```
 
+## 学习内容托管
+
+把 HTML 学习页发布到服务上，按分类组织，发布后公开可浏览。
+
+### 发布专题
+
+```bash
+# 发布（Docker 部署）
+curl -X POST http://localhost:9200/learn/publish \
+  -H "Authorization: Bearer <write-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "category": "ai-agent",
+    "slug": "my-article",
+    "title": "文章标题",
+    "desc": "卡片上的一句话摘要",
+    "html": "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>正文</h1></body></html>",
+    "tags": ["demo"],
+    "date": "2026-10-17",
+    "category_name": "AI Agent 体系"
+  }'
+
+# 返回示例
+{"url":"http://localhost:9200/learn/ai-agent/my-article/","category_url":"http://localhost:9200/learn/ai-agent/"}
+```
+
+`category_name` 只在分类尚不存在时需要。`category` 与 `slug` 必须是 kebab-case。
+
+### 浏览
+
+```bash
+# 索引页：列出全部分类与已发布专题
+curl http://localhost:9200/learn/
+
+# 分类页
+curl http://localhost:9200/learn/ai-agent/
+
+# 专题页：返回发布时的 HTML
+curl http://localhost:9200/learn/ai-agent/my-article/
+
+# 不带尾斜杠的分类路径会 307 重定向到带尾斜杠版本
+curl -i http://localhost:9200/learn/ai-agent
+```
+
+三者都不需要凭据。
+
+### 发布失败的情形
+
+发布会在写入前校验分类结构与磁盘内容是否一致，写入后还会用索引页与分类页的渲染结果自检。以下情况会被拒绝：
+
+- 缺少写凭据（401），或分类/专题标识不是 kebab-case（400）
+- 分类不存在且未提供 `category_name`（400）
+- 事实源里登记的专题在磁盘上不存在，或磁盘上有未登记的专题目录（400）
+- 自检未通过（400）
+
+被拒绝时不会留下半成品；替换已有专题时若中途失败，原内容会被恢复。
+
 ## 文件上传
 
 **注意**：以下示例使用端口 `8000`（本地开发）。Docker 部署请使用 `9200`（服务端口）或 `9202`（写端口）。
@@ -49,8 +106,10 @@ curl --upload-file myfile.txt http://localhost:8000
 curl --upload-file myfile.txt http://localhost:9200
 
 # 返回示例（简化）
-{"download_url":"http://localhost:9200/AbCdEf123456/myfile.txt"}
+{"download_url":"http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt"}
 ```
+
+返回链接中间那段是该文件专属的访问凭据。拿到链接就能取到文件，不需要再带认证头，服务开启认证时也一样。
 
 ### 方式 2: 使用 curl POST 方法
 
@@ -94,34 +153,45 @@ print(response.json())
 # {'message': 'File uploaded successfully', 'download_path': '/username/AbCdEf123456.txt', 'filename': 'AbCdEf123456.txt'}
 ```
 
-## 文件下载
+## 访问文件
 
 **注意**：以下示例使用端口 `8000`（本地开发）。Docker 部署请使用 `9200`（服务端口）或 `9201`（读端口）。
 
-### 方式 1: 使用 wget（推荐）
+访问地址就是上传返回的 `download_url`，其中的凭据段按实际返回的替换。
+
+### 返回处置按内容类型决定
+
+| 内容类型 | 行为 |
+| -------- | ---- |
+| `text/*`（含 HTML）、`image/*`（矢量图除外）、`video/*`、`audio/*`、`application/pdf` | 内联展示 |
+| `image/svg+xml`、压缩包及其余二进制 | 触发下载 |
+
+内容类型以文件名扩展名判定，上传请求里声明的类型不覆盖它。音视频支持分段请求，可在播放器里拖动进度。
+
+### 方式 1: 使用 wget
 
 ```bash
-# 下载文件（本地开发）
-wget http://localhost:8000/AbCdEf123456/myfile.txt
+# 访问文件（本地开发）
+wget http://localhost:8000/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt
 
-# 下载文件（Docker 部署）
-wget http://localhost:9200/AbCdEf123456/myfile.txt
+# 访问文件（Docker 部署）
+wget http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt
 
 # 或指定输出文件名
-wget -O downloaded_file.txt http://localhost:9200/username/AbCdEf123456
+wget -O downloaded_file.txt http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt
 ```
 
 ### 方式 2: 使用 curl
 
 ```bash
-# 下载文件（本地开发）
-curl -O http://localhost:8000/AbCdEf123456/myfile.txt
+# 访问文件（本地开发）
+curl -O http://localhost:8000/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt
 
-# 下载文件（Docker 部署）
-curl -O http://localhost:9200/AbCdEf123456/myfile.txt
+# 访问文件（Docker 部署）
+curl -O http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt
 
-# 或手动指定输出文件名
-curl -o downloaded_file.txt http://localhost:9200/AbCdEf123456/myfile.txt
+# 只取前 1KB（分段请求，音视频拖动进度走的就是这个）
+curl -H "Range: bytes=0-1023" http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt
 ```
 
 ### 方式 3: 使用 Python
@@ -129,11 +199,11 @@ curl -o downloaded_file.txt http://localhost:9200/AbCdEf123456/myfile.txt
 ```python
 import requests
 
-# 下载文件（本地开发）
-response = requests.get('http://localhost:8000/AbCdEf123456/myfile.txt')
+# 访问文件（本地开发）
+response = requests.get('http://localhost:8000/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt')
 
-# 下载文件（Docker 部署）
-response = requests.get('http://localhost:9200/AbCdEf123456/myfile.txt')
+# 访问文件（Docker 部署）
+response = requests.get('http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/myfile.txt')
 
 # 保存到本地
 with open('downloaded_file.txt', 'wb') as f:
