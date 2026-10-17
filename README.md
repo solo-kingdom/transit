@@ -252,56 +252,83 @@ curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
 - `GET /f/{token}/{original_filename}` - 按访问凭据访问文件（上传返回的链接形态）
 - `GET /{encoded_filename}/{original_filename}` - 按编码文件名下载文件（旧链接，仍可用）
 - `GET /{encoded_filename}/{original_filename}/meta` - 获取文件元信息
-- `POST /learn/publish` - 发布学习专题（需写凭据）
-- `GET /learn/` - 学习站索引页（公开，无需凭据）
-- `GET /learn/{category}/` - 学习站分类页（公开）
-- `GET /learn/{category}/{slug}/` - 学习站专题页（公开）
+- `POST /pages/publish` - 发布页面，单文件传 HTML 字符串、带资源传 zip 包（需写凭据）
+- `POST /pages/assets` - 发布共享资源（需写凭据）
+- `GET /pages/` - 页面站索引页（公开，无需凭据）
+- `GET /pages/{category}/` - 页面站分类页（公开）
+- `GET /pages/{category}/{slug}/` - 页面入口（公开）
+- `GET /pages/{category}/{slug}/{资源路径}` - 页面内的静态资源（公开）
+- `GET /pages/assets/{资源路径}` - 共享资源（公开）
 - `GET /` - 服务信息
 - `GET /health` - 健康检查
 
-### 学习内容托管
+### 页面托管
 
-服务可以托管 HTML 学习页：发布后即公开可浏览，按分类组织。
+服务可以托管按分类组织的 HTML 页面：发布后即公开可浏览。一个页面就是一个目录，可以带任意静态资源；多个页面共用集中存放的共享资源。
 
-**发布**（需写凭据）：
+**发布单文件页面**（只有 HTML，没有别的资源）：
 
 ```bash
-curl -X POST http://localhost:9200/learn/publish \
+curl -X POST http://localhost:9200/pages/publish \
   -H "Authorization: Bearer <write-token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "category": "ai-agent",
-    "slug": "my-article",
-    "title": "文章标题",
-    "desc": "卡片上的一句话摘要",
-    "html": "<!DOCTYPE html><html lang=\"zh-CN\">…</html>",
-    "tags": ["demo"],
-    "date": "2026-10-17",
-    "category_name": "AI Agent 体系",
-    "category_description": "分类简介"
-  }'
+  -F category=guide \
+  -F slug=getting-started \
+  -F title=上手指南 \
+  -F desc=卡片上的一句话摘要 \
+  -F category_name=指南 \
+  --form-string html='<!DOCTYPE html><html lang="zh-CN"><body><h1>正文</h1></body></html>'
 ```
 
-返回该专题与所属分类的公开链接：
+> HTML 字段用 `--form-string` 而不是 `-F`：`-F` 里以 `<` 开头的值会被 curl 当成「从文件读取」，会直接报错或读到别的内容。也可以写成 `-F 'html=<page.html'` 明确从文件读。
+
+**发布带资源的页面**：把页面目录打成 zip 传上去，包内就是页面目录、入口固定为 `index.html`：
+
+```bash
+# 目录结构：page/index.html、page/style.css、page/assets/logo.png
+cd page && zip -r ../page.zip . && cd ..
+
+curl -X POST http://localhost:9200/pages/publish \
+  -H "Authorization: Bearer <write-token>" \
+  -F category=guide \
+  -F slug=with-assets \
+  -F title=带资源的页面 \
+  -F desc=一句话摘要 \
+  -F category_name=指南 \
+  -F bundle=@page.zip
+```
+
+页面里用相对路径引用自己的资源即可（`./style.css`、`./assets/logo.png`），会解析到 `/pages/guide/with-assets/style.css` 这类地址。
+
+**发布共享资源**（所有页面都能用绝对路径 `/pages/assets/<路径>` 引用）：
+
+```bash
+curl -X POST http://localhost:9200/pages/assets \
+  -H "Authorization: Bearer <write-token>" \
+  -F path=theme/main.css \
+  -F file=@main.css
+```
+
+两个发布接口都返回公开链接：
 
 ```json
 {
-  "url": "http://localhost:9200/learn/ai-agent/my-article/",
-  "category_url": "http://localhost:9200/learn/ai-agent/"
+  "url": "http://localhost:9200/pages/guide/with-assets/",
+  "category_url": "http://localhost:9200/pages/guide/"
 }
 ```
 
 `category_name` 只在分类尚不存在时需要；分类已存在时忽略。
 
-**浏览**：打开 `url` 即专题页；`/learn/` 是索引页，`/learn/<category>/` 是分类页。三者都不需要凭据。
+**浏览**：打开 `url` 即页面；`/pages/` 是索引页，`/pages/<category>/` 是分类页。都不需要凭据。
 
 **约定与行为**：
 
-- `category` 与 `slug` 必须是 kebab-case（小写字母、数字与连字符）
-- 公开路径一律带尾斜杠；不带尾斜杠的 `/learn/<category>` 会重定向到带尾斜杠版本
+- `category` 与 `slug` 必须是 kebab-case（小写字母、数字与连字符）；`assets` 是共享资源的保留分类名
+- 公开路径一律带尾斜杠；不带尾斜杠的 `/pages/<category>` 会重定向到带尾斜杠版本
 - 发布时会校验分类结构与磁盘内容一致（登记了却没有文件、有文件却没登记，都会拒绝发布），并在写入后用索引页与分类页的渲染结果做一次自检
-- 替换已有专题是原子的；若发布中途失败，原内容会被恢复，不会把已发布的文章弄丢
-- 内容存在数据目录的 `learn/` 子目录下，与普通上传的文件分开
+- 替换已有页面是原子的；若发布中途失败，原内容会被恢复，不会把已发布的页面弄丢
+- 页面存在数据目录的 `pages/` 子目录下，与普通上传的文件分开
+- **资源访问有边界**：每个资源请求解析出的真实路径必须落在该页面自己的目录（共享资源则限于共享资源目录）内。`..` 上跳、绝对路径、符号链接逃逸一律拒绝，页面读不到自己目录之外的文件，也触达不到数据目录里带访问凭据的元信息
 - **发布即公开**，没有审核环节：写凭据的持有者可以直接在该域名下发布任意 HTML 页面
 
 ## 配置

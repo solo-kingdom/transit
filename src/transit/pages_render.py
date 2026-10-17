@@ -1,5 +1,5 @@
 """
-学习内容公开页面渲染
+页面托管的公开页面渲染
 
 索引页与分类页由服务端渲染：有后端之后不必再让浏览器取 JSON 自己拼，
 发布后的可用性自检也才拿得到含内容的 HTML。
@@ -10,6 +10,8 @@ from typing import Optional
 
 # 分类色盘：按分类顺序取色
 CATEGORY_COLORS = ["#35618F", "#2E7D6E", "#B0713A", "#6F5B93", "#A94F4F"]
+
+SITE_TITLE = "页面站"
 
 PAGE_TMPL = """<!DOCTYPE html>
 <html lang="zh-CN">
@@ -34,14 +36,14 @@ h1 {{ font-family:"Noto Serif SC","Songti SC",SimSun,serif; font-weight:600;
 h2 {{ font-family:"Noto Serif SC","Songti SC",SimSun,serif; font-weight:600;
   font-size:20px; color:var(--ink); margin:36px 0 12px; }}
 .desc {{ color:#6A7178; margin-bottom:36px; }}
-.topic {{ display:block; background:var(--card); border:1px solid var(--line);
+.entry {{ display:block; background:var(--card); border:1px solid var(--line);
   border-left:3px solid var(--accent); padding:16px 20px; margin-bottom:12px;
   text-decoration:none; }}
-.topic .path {{ font:12px/1.4 ui-monospace,"SF Mono",Consolas,monospace; color:var(--accent); }}
-.topic h3 {{ font-family:"Noto Serif SC","Songti SC",SimSun,serif; font-weight:600;
+.entry .path {{ font:12px/1.4 ui-monospace,"SF Mono",Consolas,monospace; color:var(--accent); }}
+.entry h3 {{ font-family:"Noto Serif SC","Songti SC",SimSun,serif; font-weight:600;
   font-size:19px; color:var(--ink); margin:4px 0 6px; }}
-.topic .tdesc {{ font-size:13.5px; line-height:1.62; color:#6A7178; margin:0 0 8px; }}
-.topic .meta {{ font:12px/1.4 ui-monospace,"SF Mono",Consolas,monospace; color:#8A9198; }}
+.entry .tdesc {{ font-size:13.5px; line-height:1.62; color:#6A7178; margin:0 0 8px; }}
+.entry .meta {{ font:12px/1.4 ui-monospace,"SF Mono",Consolas,monospace; color:#8A9198; }}
 .empty {{ color:#6A7178; }}
 footer {{ margin-top:44px; font:12px/1.6 ui-monospace,"SF Mono",Consolas,monospace;
   color:#8A9198; }}
@@ -57,62 +59,65 @@ footer {{ margin-top:44px; font:12px/1.6 ui-monospace,"SF Mono",Consolas,monospa
 """
 
 
-def _topic_card(topic: dict, accent: str, href_prefix: str = "") -> str:
+def _entry_card(entry: dict, accent: str, href_prefix: str = "") -> str:
     """
-    渲染一张专题卡片，呈现标题与路径
+    渲染一张页面卡片，呈现标题与路径
 
     Args:
-        topic: 专题条目
+        entry: 页面条目
         accent: 该分类的强调色
-        href_prefix: 相对链接前缀——索引页在 /learn/ 下需带分类段，分类页在 /learn/<category>/ 下不带
+        href_prefix: 相对链接前缀——索引页在 /pages/ 下需带分类段，分类页在 /pages/<category>/ 下不带
     """
-    path = topic.get("path", "")
-    slug = topic.get("slug", "")
-    href = f"{href_prefix}{slug}/" if path.endswith("/") else f"{href_prefix}{slug}.html"
-    tags = " ".join(f"#{html.escape(t)}" for t in topic.get("tags", []))
-    desc = topic.get("desc", "")
+    path = entry.get("path", "")
+    slug = entry.get("slug", "")
+    href = f"{href_prefix}{slug}/"
+    tags = " ".join(f"#{html.escape(t)}" for t in entry.get("tags", []))
+    desc = entry.get("desc", "")
 
     return (
-        f'    <a class="topic" href="{href}" style="--accent:{accent}">\n'
+        f'    <a class="entry" href="{href}" style="--accent:{accent}">\n'
         f'      <p class="path">{html.escape(path)}</p>\n'
-        f'      <h3>{html.escape(topic.get("title", ""))}</h3>\n'
+        f'      <h3>{html.escape(entry.get("title", ""))}</h3>\n'
         + (f'      <p class="tdesc">{html.escape(desc)}</p>\n' if desc else "")
-        + f'      <p class="meta">{html.escape(topic.get("date", ""))}'
+        + f'      <p class="meta">{html.escape(entry.get("date", ""))}'
         + (f" · {tags}" if tags else "")
         + "</p>\n    </a>"
     )
 
 
-def _sorted_topics(category: dict) -> list[dict]:
-    return sorted(category.get("topics", []), key=lambda t: t.get("date", ""), reverse=True)
+def _sorted_pages(category: dict) -> list[dict]:
+    return sorted(category.get("pages", []), key=lambda p: p.get("date", ""), reverse=True)
 
 
 def render_index_page(registry: dict) -> str:
-    """渲染索引页：按分类列出已发布专题"""
+    """渲染索引页：按分类列出已发布页面"""
     categories = registry.get("categories", [])
 
     if not categories:
-        body = '  <h1>学习站</h1>\n  <p class="empty">暂无内容。</p>'
+        body = f'  <h1>{SITE_TITLE}</h1>\n  <p class="empty">暂无页面。</p>'
     else:
-        blocks = ["  <h1>学习站</h1>", '  <p class="desc">按分类浏览已发布的学习专题。</p>']
+        blocks = [
+            f"  <h1>{SITE_TITLE}</h1>",
+            '  <p class="desc">按分类浏览已托管的页面。</p>',
+        ]
         for i, category in enumerate(categories):
             accent = CATEGORY_COLORS[i % len(CATEGORY_COLORS)]
             slug = category.get("slug", "")
             blocks.append(
                 f'  <h2><a href="./{html.escape(slug)}/">{html.escape(category.get("name", slug))}</a></h2>'
             )
-            topics = _sorted_topics(category)
-            if topics:
-                blocks.extend(_topic_card(t, accent, f"./{slug}/") for t in topics)
+            pages = _sorted_pages(category)
+            if pages:
+                blocks.extend(_entry_card(p, accent, f"./{slug}/") for p in pages)
             else:
-                blocks.append('  <p class="empty">该分类暂无内容。</p>')
+                blocks.append('  <p class="empty">该分类暂无页面。</p>')
         body = "\n".join(blocks)
 
-    return PAGE_TMPL.format(title="学习站", body=body, footer="学习站 · 由 transit 托管")
+    return PAGE_TMPL.format(title=SITE_TITLE, body=body, footer=f"{SITE_TITLE} · 由 transit 托管")
 
 
 def render_category_page(registry: dict, category_slug: str) -> Optional[str]:
-    """渲染分类页：列出该分类下的已发布专题；分类不存在时返回 None"""
+    """渲染分类页：列出该分类下的已发布页面；分类不存在时返回 None"""
     categories = registry.get("categories", [])
     index = next((i for i, c in enumerate(categories) if c.get("slug") == category_slug), None)
     if index is None:
@@ -123,20 +128,20 @@ def render_category_page(registry: dict, category_slug: str) -> Optional[str]:
     name = category.get("name", category_slug)
 
     blocks = [
-        f'  <p class="crumb"><a href="../../learn/">学习站</a> / {html.escape(category_slug)}/</p>',
+        f'  <p class="crumb"><a href="../../pages/">{SITE_TITLE}</a> / {html.escape(category_slug)}/</p>',
         f"  <h1>{html.escape(name)}</h1>",
     ]
     if category.get("description"):
         blocks.append(f'  <p class="desc">{html.escape(category["description"])}</p>')
 
-    topics = _sorted_topics(category)
-    if topics:
-        blocks.extend(_topic_card(t, accent) for t in topics)
+    pages = _sorted_pages(category)
+    if pages:
+        blocks.extend(_entry_card(p, accent) for p in pages)
     else:
-        blocks.append('  <p class="empty">该分类暂无内容。</p>')
+        blocks.append('  <p class="empty">该分类暂无页面。</p>')
 
     return PAGE_TMPL.format(
-        title=f"{name} · 学习站",
-        body="\n".join(blocks),
-        footer="学习站 · 由 transit 托管",
+        title=f"{name} · {SITE_TITLE}",
+        body="\n".join(body for body in blocks),
+        footer=f"{SITE_TITLE} · 由 transit 托管",
     )

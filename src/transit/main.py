@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .routers.access import router as access_router
 from .routers.files import router as files_router
-from .routers.learn import router as learn_router
+from .routers.pages import router as pages_router
 
 # 配置日志
 logging.basicConfig(
@@ -128,10 +128,10 @@ app.add_middleware(
 )
 
 # 注册路由
-# 顺序敏感：文件路由的下载路径首段是变量，会吃掉 /f/{token}/{原文件名}、/learn/<category>/
-# 这类路径，必须让访问与学习内容路由先注册，否则它们会静默落到文件路由上
+# 顺序敏感：文件路由的下载路径首段是变量，会吃掉 /f/{token}/{原文件名}、/pages/<category>/
+# 这类路径，必须让访问与页面托管路由先注册，否则它们会静默落到文件路由上
 app.include_router(access_router, tags=["access"])
-app.include_router(learn_router, tags=["learn"])
+app.include_router(pages_router, tags=["pages"])
 app.include_router(files_router, tags=["files"])
 
 
