@@ -8,7 +8,7 @@ import os
 import secrets
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -182,6 +182,7 @@ class FileService:
         remote_address: str,
         token: str,
         content_type: str,
+        expires_in: Optional[int] = None,
     ) -> FileMeta:
         """
         保存文件元信息
@@ -193,18 +194,21 @@ class FileService:
             remote_address: 上传者 IP 地址
             token: 访问凭据
             content_type: 内容类型
+            expires_in: 有效期（秒）；None 表示永不过期
 
         Returns:
             文件元信息对象
         """
+        now = datetime.now()
         meta = FileMeta(
             encoded_filename=encoded_filename,
             original_filename=original_filename,
-            upload_time=datetime.now(),
+            upload_time=now,
             remote_address=remote_address,
             file_size=file_size,
             token=token,
             content_type=content_type,
+            expires_at=now + timedelta(seconds=expires_in) if expires_in else None,
         )
 
         meta_path = self.get_meta_path(encoded_filename)
@@ -244,12 +248,32 @@ class FileService:
         except (json.JSONDecodeError, KeyError, ValueError):
             return None
 
+    def is_expired(self, meta: Optional[FileMeta]) -> bool:
+        """
+        判断元信息是否已过期
+
+        没有元信息、或元信息里没有 expires_at 时都视为未过期：
+        前者交给调用方按「文件不存在」处理，后者兼容升级前写入的旧文件。
+
+        Args:
+            meta: 文件元信息，可以为 None
+
+        Returns:
+            是否已过期
+        """
+        if meta is None or meta.expires_at is None:
+            return False
+
+        now = datetime.now(tz=meta.expires_at.tzinfo)
+        return now >= meta.expires_at
+
     def save_file(
         self,
         file_content: bytes,
         original_filename: str,
         remote_address: str,
         declared_content_type: Optional[str] = None,
+        expires_in: Optional[int] = None,
     ) -> tuple[str, FileMeta]:
         """
         保存上传的文件
@@ -259,6 +283,7 @@ class FileService:
             original_filename: 原始文件名
             remote_address: 上传者 IP 地址
             declared_content_type: 上传请求声明的内容类型（仅在扩展名推导不出时采用）
+            expires_in: 有效期（秒）；None 表示永不过期
 
         Returns:
             元组：(编码后的文件名, 文件元信息)
@@ -298,6 +323,7 @@ class FileService:
             remote_address=remote_address,
             token=token,
             content_type=content_type,
+            expires_in=expires_in,
         )
 
         # 写入索引，使新文件立刻可被反查到

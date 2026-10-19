@@ -5,7 +5,7 @@
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -411,3 +411,102 @@ def test_legacy_paths_still_work_and_meta_stays_unreachable():
     response = client.get(f"/{meta_name}/payload.txt")
     assert response.status_code == 404
     assert "token" not in response.text
+
+
+# ---------------------------------------------------------------- 有效期
+
+
+def _expire_now(data: dict) -> str:
+    """把已上传文件的过期时间改到过去，返回其编码文件名"""
+    token = data["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    encoded = file_service.find_by_token(token)
+    assert encoded is not None
+
+    meta_path = file_service.get_meta_path(encoded)
+    payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    payload["expires_at"] = (datetime.now() - timedelta(seconds=1)).isoformat()
+    meta_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return encoded
+
+
+def test_upload_without_expiry_never_expires():
+    """默认不设有效期：响应不含 expires_at，元信息里也为 None"""
+    response = client.post("/", files={"file": ("keep.txt", b"keep", "text/plain")})
+    assert response.status_code == 200
+    assert "expires_at" not in response.json()
+
+    token = response.json()["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    encoded = file_service.find_by_token(token)
+    meta = file_service.get_meta(encoded)
+    assert meta is not None
+    assert meta.expires_at is None
+    assert not file_service.is_expired(meta)
+
+
+def test_upload_with_expiry_records_expires_at():
+    """表单设置 expires_in 后，响应与元信息都带上过期时间"""
+    response = client.post(
+        "/",
+        files={"file": ("ttl.txt", b"ttl", "text/plain")},
+        data={"expires_in": "3600"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "expires_at" in body
+
+    token = body["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    meta = file_service.get_meta(file_service.find_by_token(token))
+    assert meta is not None
+    assert meta.expires_at is not None
+    # 大约是一小时后（允许几秒误差）
+    remaining = (meta.expires_at - datetime.now()).total_seconds()
+    assert 3590 < remaining <= 3600
+
+
+def test_put_upload_accepts_expires_in_query():
+    """PUT 裸 body 上传通过 query 设置有效期"""
+    response = client.put("/ttl-put.txt?expires_in=60", content=b"raw")
+    assert response.status_code == 200
+    assert "expires_at" in response.json()
+
+
+def test_invalid_expires_in_is_rejected():
+    """非正整数有效期返回 400，且不能悄悄退回不过期"""
+    for bad in ("0", "-5", "abc", "1.5"):
+        response = client.post(
+            "/",
+            files={"file": ("bad.txt", b"x", "text/plain")},
+            data={"expires_in": bad},
+        )
+        assert response.status_code == 400, bad
+        assert "expires_in" in response.text
+
+
+def test_expired_file_returns_410_on_access_link():
+    """过期后自足链接返回 410，而不是 404"""
+    data = upload("gone.txt", b"bye")
+    path = path_of(data["download_url"])
+    assert client.get(path).status_code == 200
+
+    encoded = _expire_now(data)
+    assert client.get(path).status_code == 410
+    assert encoded
+
+
+def test_expired_file_returns_410_on_legacy_paths():
+    """过期后按编码名下载与查元信息都返回 410"""
+    data = upload("legacy-gone.txt", b"bye")
+    encoded = _expire_now(data)
+
+    assert client.get(f"/{encoded}/legacy-gone.txt").status_code == 410
+    assert client.get(f"/{encoded}/legacy-gone.txt/meta").status_code == 410
+
+
+def test_expiry_does_not_affect_other_files():
+    """过期判定只看自己的元信息，不影响其他文件"""
+    old = upload("one.txt", b"one")
+    fresh = upload("two.txt", b"two")
+    _expire_now(old)
+
+    assert client.get(path_of(old["download_url"])).status_code == 410
+    assert client.get(path_of(fresh["download_url"])).status_code == 200

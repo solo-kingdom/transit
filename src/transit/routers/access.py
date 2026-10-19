@@ -27,6 +27,8 @@ async def access_file(
     返回处置按内容类型决定：文本、图片（矢量图除外）、音视频与 PDF 内联展示，
     其余触发下载。分段请求由 FileResponse 承担，音视频可跳转播放。
 
+    设置了有效期的文件过期后返回 410 Gone——比 404 更能表达「曾经存在但已失效」。
+
     Args:
         token: 文件访问凭据
         original_filename: 原始文件名（仅用于美化 URL，不参与查找）
@@ -43,6 +45,9 @@ async def access_file(
         raise HTTPException(status_code=404, detail="File not found")
 
     meta = file_service.get_meta(encoded_filename)
+    if file_service.is_expired(meta):
+        raise HTTPException(status_code=410, detail="File has expired")
+
     filename = meta.original_filename if meta and meta.original_filename else original_filename
     content_type = (
         meta.content_type if meta and meta.content_type else detect_content_type(filename)
