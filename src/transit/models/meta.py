@@ -34,4 +34,8 @@ class FileMeta(BaseModel):
     # 本次变更前写入的元信息文件没有这个字段，默认空串
     content_type: str = ""
 
+    # 文件过期时间；为空表示永不过期
+    # 本次变更前写入的元信息文件没有这个字段，默认 None（即不过期）
+    expires_at: Optional[datetime] = None
+
     # （已移除 username 和按用户名分目录的概念）

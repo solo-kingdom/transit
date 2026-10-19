@@ -9,6 +9,7 @@
 - 🔐 **Token 认证** - 支持读写分离的 token 认证，可配置多个 token
 - 🎲 **UUID 文件名** - 使用 UUID 生成唯一文件名，保护隐私
 - 🔗 **自足链接** - 上传返回带 per-file 访问凭据的完整 URL，拿到链接即可访问，不必再带认证头
+- ⏳ **可设有效期** - 上传时可指定保留时长，过期后链接返回 `410 Gone`；默认永不过期
 - 📄 **按类型展示** - 文本、图片、音视频与 PDF 在浏览器直接展示或播放，其余触发下载；音视频支持分段请求（Range）
 - 📊 **元信息管理** - 记录文件上传时间、来源 IP、文件大小等元信息
 - 🛠️ **管理工具** - 提供命令行管理工具，支持统计、清理等功能
@@ -196,6 +197,32 @@ curl --upload-file /path/to/file http://localhost:9200
 - 链接中间那一段是该文件专属的**访问凭据**：拿到链接即可取到文件，不需要再带认证头
 - 即便服务开启了认证，这个链接依然直接可用
 
+### 设置有效期
+
+上传时可选传 `expires_in`（秒，正整数），**不传则永不过期**。POST 用表单字段，PUT 用 query 参数（PUT 的请求体就是文件本身）：
+
+```bash
+# POST：保留 1 小时
+curl -X POST http://localhost:9200/ -F file=@report.pdf -F expires_in=3600
+
+# PUT：保留 7 天
+curl -T report.pdf "http://localhost:9200/report.pdf?expires_in=604800"
+```
+
+设置成功时，上传响应会多一个 `expires_at`（ISO 时间）：
+
+```json
+{
+  "download_url": "http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/report.pdf",
+  "expires_at": "2026-10-19T20:35:09"
+}
+```
+
+- 过期后，自足链接与按编码名下载 / 查元信息都返回 **`410 Gone`**（区分「过期」与「不存在」的 404）
+- 过期文件不会被自动删除，需要空间时可再用 `scripts/manage.py clean --days N` 清理
+- `expires_in` 不是正整数时返回 `400`
+- 升级前上传、元信息里没有 `expires_at` 的老文件视为永不过期
+
 ### 访问文件
 
 把返回的 `download_url` 直接交给浏览器、wget 或 curl 即可：
@@ -247,8 +274,8 @@ curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
 
 ### API 端点
 
-- `POST /` - 上传文件（multipart/form-data 格式）
-- `PUT /` 和 `PUT /{path}` - 上传文件（原始文件内容，支持 curl --upload-file）
+- `POST /` - 上传文件（multipart/form-data 格式，可选表单字段 `expires_in` 秒数）
+- `PUT /` 和 `PUT /{path}` - 上传文件（原始文件内容，支持 curl --upload-file；可选 query `expires_in` 秒数）
 - `GET /f/{token}/{original_filename}` - 按访问凭据访问文件（上传返回的链接形态）
 - `GET /{encoded_filename}/{original_filename}` - 按编码文件名下载文件（旧链接，仍可用）
 - `GET /{encoded_filename}/{original_filename}/meta` - 获取文件元信息

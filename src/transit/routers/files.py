@@ -3,7 +3,17 @@
 """
 
 from urllib.parse import quote
-from fastapi import APIRouter, File, UploadFile, HTTPException, Path as PathParam, Request, Depends
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path as PathParam,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import Response
 from typing import Optional
 
@@ -73,6 +83,30 @@ def get_client_ip(request: Request) -> str:
     return "unknown"
 
 
+def _parse_expires_in(raw) -> Optional[int]:
+    """
+    校验有效期参数
+
+    Args:
+        raw: 客户端给的值（表单字段或 query 参数），None 表示不设置
+
+    Returns:
+        正整数秒数；未设置时返回 None
+
+    Raises:
+        HTTPException: 不是正整数时抛 400
+    """
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="expires_in must be a positive integer")
+    if value <= 0:
+        raise HTTPException(status_code=400, detail="expires_in must be a positive integer")
+    return value
+
+
 def _build_upload_response(
     request: Request,
     encoded_filename: str,
@@ -91,16 +125,18 @@ def _build_upload_response(
     original_for_path = quote(meta.original_filename, safe="")
     download_url = f"{get_download_base_url(request)}/f/{meta.token}/{original_for_path}"
 
-    # 最小化响应体：仅返回下载 URL
-    return {
-        "download_url": download_url,
-    }
+    # 最小化响应体：仅返回下载 URL；设置有效期时附带过期时间
+    payload = {"download_url": download_url}
+    if meta.expires_at is not None:
+        payload["expires_at"] = meta.expires_at.isoformat()
+    return payload
 
 
 async def _upload_file_post(
     request: Request,
     file: UploadFile,
     token: Optional[str],
+    expires_in: Optional[int] = None,
 ):
     """
     POST 上传文件的实际处理逻辑
@@ -109,6 +145,7 @@ async def _upload_file_post(
         request: 请求对象
         file: 上传的文件
         token: 认证 token（如果启用认证）
+        expires_in: 有效期（秒）；None 表示永不过期
 
     Returns:
         包含完整下载 URL 的响应
@@ -126,6 +163,7 @@ async def _upload_file_post(
             original_filename=file.filename or "unnamed",
             remote_address=remote_address,
             declared_content_type=file.content_type,
+            expires_in=expires_in,
         )
 
         # 构造统一的上传成功响应
@@ -141,6 +179,7 @@ async def _upload_file_post(
 async def upload_file_post(
     request: Request,
     file: UploadFile = File(..., description="要上传的文件"),
+    expires_in: Optional[str] = Form(None, description="有效期（秒，正整数）；不填表示永不过期"),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
@@ -151,18 +190,20 @@ async def upload_file_post(
     Args:
         request: 请求对象
         file: 上传的文件
+        expires_in: 有效期（秒，正整数）；不填表示永不过期
         token: 认证 token（如果启用认证）
 
     Returns:
-        包含完整下载 URL 的响应
+        包含完整下载 URL 的响应；设置有效期时含 expires_at
     """
-    return await _upload_file_post(request, file, token)
+    return await _upload_file_post(request, file, token, _parse_expires_in(expires_in))
 
 
 async def _upload_file_put(
     request: Request,
     token: Optional[str],
     filename_from_path: Optional[str] = None,
+    expires_in: Optional[int] = None,
 ):
     """
     PUT 上传文件的实际处理逻辑
@@ -171,6 +212,7 @@ async def _upload_file_put(
         request: 请求对象
         token: 认证 token（如果启用认证）
         filename_from_path: 从 URL 路径中提取的文件名（可选）
+        expires_in: 有效期（秒）；None 表示永不过期
 
     Returns:
         包含完整下载 URL 的响应
@@ -219,6 +261,7 @@ async def _upload_file_put(
             original_filename=original_filename,
             remote_address=remote_address,
             declared_content_type=request.headers.get("content-type"),
+            expires_in=expires_in,
         )
 
         # 构造响应（PUT 方式需要在使用默认文件名时附加 hint）
@@ -238,6 +281,7 @@ async def _upload_file_put(
 @router.put("/")
 async def upload_file_put_root(
     request: Request,
+    expires_in: Optional[str] = Query(None, description="有效期（秒，正整数）；不填表示永不过期"),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
@@ -249,18 +293,20 @@ async def upload_file_put_root(
 
     Args:
         request: 请求对象
+        expires_in: 有效期（秒，正整数）；不填表示永不过期
         token: 认证 token（如果启用认证）
 
     Returns:
-        包含完整下载 URL 的响应
+        包含完整下载 URL 的响应；设置有效期时含 expires_at
     """
-    return await _upload_file_put(request, token)
+    return await _upload_file_put(request, token, expires_in=_parse_expires_in(expires_in))
 
 
 @router.put("/{path:path}")
 async def upload_file_put(
     request: Request,
     path: str = PathParam(..., description="文件路径（用来推断文件名，可选）"),
+    expires_in: Optional[str] = Query(None, description="有效期（秒，正整数）；不填表示永不过期"),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
@@ -270,10 +316,11 @@ async def upload_file_put(
     Args:
         request: 请求对象
         path: 请求路径（例如 apollo.log 或 logs/apollo.log）
+        expires_in: 有效期（秒，正整数）；不填表示永不过期
         token: 认证 token（如果启用认证）
 
     Returns:
-        包含完整下载 URL 的响应
+        包含完整下载 URL 的响应；设置有效期时含 expires_at
     """
     # 整个 path 只用来推断原始文件名，与存储路径无关
     # 例如:
@@ -285,7 +332,9 @@ async def upload_file_put(
     else:
         filename_from_path = None
 
-    return await _upload_file_put(request, token, filename_from_path)
+    return await _upload_file_put(
+        request, token, filename_from_path, _parse_expires_in(expires_in)
+    )
 
 
 @router.get("/{encoded_filename}/{original_filename}")
@@ -317,6 +366,8 @@ async def download_file(
 
     # 读取元信息以获取原始文件名
     meta = file_service.get_meta(encoded_filename)
+    if file_service.is_expired(meta):
+        raise HTTPException(status_code=410, detail="File has expired")
 
     # 确定要使用的文件名
     if meta and meta.original_filename:
@@ -358,6 +409,9 @@ async def get_file_meta(
 
     if meta is None:
         raise HTTPException(status_code=404, detail="File metadata not found")
+
+    if file_service.is_expired(meta):
+        raise HTTPException(status_code=410, detail="File has expired")
 
     # 返回元信息（剔除访问凭据：持全局读 token 即可读出它，会让 per-file 凭据失去意义）
     meta_payload = meta.model_dump(mode="json")
