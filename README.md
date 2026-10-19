@@ -259,7 +259,7 @@ curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
 - `GET /pages/{category}/{slug}/` - 页面入口（公开）
 - `GET /pages/{category}/{slug}/{资源路径}` - 页面内的静态资源（公开）
 - `GET /pages/assets/{资源路径}` - 共享资源（公开）
-- `GET /` - 服务信息
+- `GET /` - 根路径产品说明页（中英文，`?lang=en` 切英文）
 - `GET /health` - 健康检查
 
 ### 页面托管

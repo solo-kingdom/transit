@@ -7,10 +7,12 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from .config import settings
+from .landing import render_landing_page
 from .routers.access import router as access_router
 from .routers.files import router as files_router
 from .routers.pages import router as pages_router
@@ -135,10 +137,22 @@ app.include_router(pages_router, tags=["pages"])
 app.include_router(files_router, tags=["files"])
 
 
-@app.get("/")
-async def root():
-    """根路径"""
-    return {"service": settings.app_name, "version": settings.app_version, "status": "running"}
+@app.get("/", response_class=HTMLResponse)
+async def root(lang: str = Query("zh", description="页面语言：zh 或 en")):
+    """
+    根路径产品说明页（中英文）
+
+    根路径是服务对外门面，渲染为产品说明页而非 JSON；
+    机器可读的服务信息仍可从 /health 获取。
+    """
+    return HTMLResponse(
+        render_landing_page(
+            lang=lang,
+            service=settings.app_name,
+            version=settings.app_version,
+        ),
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.get("/health")

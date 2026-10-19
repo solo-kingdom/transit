@@ -11,14 +11,34 @@ from transit.services.file_service import file_service
 client = TestClient(app)
 
 
-def test_root():
-    """测试根路径"""
+def test_root_zh():
+    """根路径默认渲染中文产品说明页"""
     response = client.get("/")
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "running"
-    assert "service" in data
-    assert "version" in data
+    assert response.headers["content-type"].startswith("text/html")
+    body = response.text
+    assert "文件" in body
+    for url in ("exploring.fun", "wii.pub", "solo.wii.pub", "dove.wii.pub"):
+        assert url in body
+
+
+def test_root_en():
+    """根路径带 lang=en 时渲染英文版"""
+    response = client.get("/?lang=en")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    body = response.text
+    assert '<html lang="en">' in body
+    assert "hosted by transit" in body
+    for url in ("exploring.fun", "wii.pub", "solo.wii.pub", "dove.wii.pub"):
+        assert url in body
+
+
+def test_root_falls_back_to_zh():
+    """未知语言回落到中文"""
+    response = client.get("/?lang=fr")
+    assert response.status_code == 200
+    assert '<html lang="zh-CN">' in response.text
 
 
 def test_health():
