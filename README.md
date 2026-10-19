@@ -399,7 +399,7 @@ curl -H "Authorization: Bearer read123" http://localhost:9200/AbCdEf123456.txt/f
 - `WRITE_TOKENS`：上传文件、发布页面 / 共享资源时使用
 - 多个 token 用逗号分隔；命中第一个非空来源即用它校验，不叠加
 - 缺凭据返回 `401 Missing authentication token`，凭据不在白名单返回 `401 Invalid <read|write> token`
-- 裸 body 的 `PUT /{path}` 上传（`curl --upload-file`）没有表单字段，只能走请求头或 query
+- 裸 body 的 `PUT /{path}` 上传（`curl --upload-file`）请求体就是文件本身，鉴权不会去读它，因此只能走请求头或 query，不能用表单 `token`
 - 上传返回的 `/f/{token}/...` 链接**不需要**任何认证头：链接里的凭据就是访问方式，与是否开启认证无关
 - ⚠️ query 传 token 会进入访问日志、浏览器历史与 `Referer`，仅在确实不便设头 / 表单时使用
 
