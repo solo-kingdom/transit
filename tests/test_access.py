@@ -131,6 +131,96 @@ def test_upload_requires_write_token_when_auth_enabled(monkeypatch):
     assert wrong.status_code == 401
 
 
+# ---------------------------------------------------------------- 凭据来源
+
+
+def test_upload_accepts_x_auth_token_header(monkeypatch):
+    """开启认证后，X-Auth-Token 头与 Authorization 头等价"""
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    response = client.post(
+        "/",
+        files={"file": ("x.txt", b"via-x-header", "text/plain")},
+        headers={"X-Auth-Token": "write-secret"},
+    )
+    assert response.status_code == 200
+
+
+def test_upload_accepts_form_token(monkeypatch):
+    """开启认证后，表单字段 token 可作为凭据"""
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    response = client.post(
+        "/",
+        files={"file": ("form.txt", b"via-form", "text/plain")},
+        data={"token": "write-secret"},
+    )
+    assert response.status_code == 200
+
+
+def test_upload_accepts_query_token(monkeypatch):
+    """开启认证后，query 参数 token 可作为凭据"""
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    response = client.post(
+        "/?token=write-secret",
+        files={"file": ("query.txt", b"via-query", "text/plain")},
+    )
+    assert response.status_code == 200
+
+
+def test_token_precedence_header_over_form(monkeypatch):
+    """Authorization 头优先于表单 token：头里错、表单里对，仍按头判定为错"""
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    response = client.post(
+        "/",
+        files={"file": ("p.txt", b"x", "text/plain")},
+        data={"token": "write-secret"},
+        headers={"Authorization": "Bearer nope"},
+    )
+    assert response.status_code == 401
+
+
+def test_wrong_token_rejected_from_any_source(monkeypatch):
+    """任一来源给出错误 token 都被拒"""
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    for kwargs in (
+        {"headers": {"X-Auth-Token": "nope"}},
+        {"data": {"token": "nope"}},
+    ):
+        response = client.post(
+            "/", files={"file": ("w.txt", b"x", "text/plain")}, **kwargs
+        )
+        assert response.status_code == 401
+
+
+def test_publish_page_accepts_form_token(monkeypatch):
+    """页面发布接口同样支持表单 token（原本就是 multipart 表单）"""
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    response = client.post(
+        "/pages/publish",
+        data={
+            "category": "auth-cat",
+            "slug": "auth-page",
+            "title": "鉴权页",
+            "desc": "摘要",
+            "html": "<h1>hi</h1>",
+            "category_name": "鉴权分类",
+            "token": "write-secret",
+        },
+    )
+    assert response.status_code == 200
+
+
 # ---------------------------------------------------------------- 类型分流
 
 

@@ -364,28 +364,44 @@ curl -X POST http://localhost:9200/pages/assets \
 
 ### 认证配置
 
-启用 token 认证后，需要在请求头中携带 token：
+默认不开启认证（`AUTH_ENABLED=false`），任何人都能上传。开启后，**上传、发布页面、按旧路径下载与查询元信息**都需要携带预设 token。
 
 ```bash
 # 启用认证
 export AUTH_ENABLED=true
 export READ_TOKENS=read123,read456
 export WRITE_TOKENS=write123,write456
+```
 
-# 上传文件（需要写 token）
-curl -H "Authorization: Bearer write123" --upload-file file.txt http://localhost:9200/user
+token 可从四个位置传入，按以下顺序命中第一个非空值，四种传法完全等价：
 
-# 下载文件（需要读 token）
-curl -H "Authorization: Bearer read123" http://localhost:9200/user/filename
+| 顺序 | 位置 | 示例 |
+| --- | --- | --- |
+| 1 | `Authorization` 头 | `-H "Authorization: Bearer write123"` |
+| 2 | `X-Auth-Token` 头 | `-H "X-Auth-Token: write123"` |
+| 3 | 表单字段 `token` | `-F token=write123`（multipart / urlencoded） |
+| 4 | 查询参数 `token` | `?token=write123` |
+
+```bash
+# 上传文件（写 token，任选一种传法）
+curl -H "Authorization: Bearer write123" --upload-file file.txt http://localhost:9200/
+curl -H "X-Auth-Token: write123" --upload-file file.txt http://localhost:9200/
+curl --upload-file file.txt "http://localhost:9200/?token=write123"
+curl -F token=write123 -F file=@file.txt http://localhost:9200/
+
+# 下载文件（读 token，旧路径）
+curl -H "Authorization: Bearer read123" http://localhost:9200/AbCdEf123456.txt/filename
 ```
 
 **认证说明**：
 
-- `READ_TOKENS`：用于按编码文件名下载文件（旧路径）和查询元信息
-- `WRITE_TOKENS`：用于上传文件
-- 多个 token 用逗号分隔
-- token 在请求头中以 `Authorization: Bearer <token>` 格式携带
-- 上传返回的 `/f/{token}/...` 链接**不需要**任何认证头：链接里的凭据就是访问方式
+- `READ_TOKENS`：按编码文件名下载文件（旧路径）与查询 `/meta` 时使用
+- `WRITE_TOKENS`：上传文件、发布页面 / 共享资源时使用
+- 多个 token 用逗号分隔；命中第一个非空来源即用它校验，不叠加
+- 缺凭据返回 `401 Missing authentication token`，凭据不在白名单返回 `401 Invalid <read|write> token`
+- 裸 body 的 `PUT /{path}` 上传（`curl --upload-file`）没有表单字段，只能走请求头或 query
+- 上传返回的 `/f/{token}/...` 链接**不需要**任何认证头：链接里的凭据就是访问方式，与是否开启认证无关
+- ⚠️ query 传 token 会进入访问日志、浏览器历史与 `Referer`，仅在确实不便设头 / 表单时使用
 
 ### 读写分离架构
 
