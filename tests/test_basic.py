@@ -5,6 +5,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from transit.main import app
+from transit.services.file_service import file_service
 
 
 client = TestClient(app)
@@ -85,10 +86,13 @@ def test_get_file_meta():
     assert upload_response.status_code == 200
     upload_data = upload_response.json()
     download_url = upload_data["download_url"]
-    # 从 download_url 中解析 encoded 和 original
-    path = download_url.split("://", 1)[-1]
-    path = path[path.find("/") + 1 :]  # 去掉第一个 '/'
-    encoded, original = path.split("/", 1)
+
+    # 下载链接只携带访问凭据，不再暴露编码文件名；
+    # 元信息路由按编码文件名定位，故用凭据反查
+    token = download_url.split("/f/", 1)[1].split("/", 1)[0]
+    encoded = file_service.find_by_token(token)
+    assert encoded is not None
+    original = "meta_test.txt"
 
     # 获取元信息
     meta_response = client.get(f"/{encoded}/{original}/meta")

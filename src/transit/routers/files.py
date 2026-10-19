@@ -9,6 +9,7 @@ from typing import Optional
 
 from ..auth import verify_write_token, verify_read_token
 from ..config import settings
+from ..content import content_disposition
 from ..services.file_service import file_service
 
 router = APIRouter()
@@ -83,10 +84,12 @@ def _build_upload_response(
     构造统一的上传成功响应结构
 
     根据需求，上传接口只返回下载链接，避免冗余信息泄露。
+
+    链接自带该文件专属的访问凭据，拿到链接即可取到文件，不必再带认证头。
     """
-    # 下载 URL: /{encoded_filename}/{original_filename}
+    # 访问 URL: /f/{token}/{original_filename}
     original_for_path = quote(meta.original_filename, safe="")
-    download_url = f"{get_download_base_url(request)}/{encoded_filename}/{original_for_path}"
+    download_url = f"{get_download_base_url(request)}/f/{meta.token}/{original_for_path}"
 
     # 最小化响应体：仅返回下载 URL
     return {
@@ -122,6 +125,7 @@ async def _upload_file_post(
             file_content=content,
             original_filename=file.filename or "unnamed",
             remote_address=remote_address,
+            declared_content_type=file.content_type,
         )
 
         # 构造统一的上传成功响应
@@ -214,6 +218,7 @@ async def _upload_file_put(
             file_content=content,
             original_filename=original_filename,
             remote_address=remote_address,
+            declared_content_type=request.headers.get("content-type"),
         )
 
         # 构造响应（PUT 方式需要在使用默认文件名时附加 hint）
@@ -320,24 +325,11 @@ async def download_file(
         # 降级：使用编码后的文件名
         original_filename = encoded_filename
 
-    # 构建 Content-Disposition 响应头，支持 RFC 5987
-    # 格式：attachment; filename="fallback"; filename*=UTF-8''encoded_filename
-    # 对文件名进行 URL 编码以支持非 ASCII 字符
-    encoded_filename_url = quote(original_filename, safe="")
-
-    # 生成 ASCII 降级文件名（移除或替换非 ASCII 字符）
-    ascii_filename = original_filename.encode("ascii", "replace").decode("ascii")
-
-    # 构建响应头
-    content_disposition = (
-        f"attachment; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename_url}"
-    )
-
     # 返回文件内容
     return Response(
         content=content,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": content_disposition},
+        headers={"Content-Disposition": content_disposition(original_filename, inline=False)},
     )
 
 
@@ -367,8 +359,11 @@ async def get_file_meta(
     if meta is None:
         raise HTTPException(status_code=404, detail="File metadata not found")
 
-    # 返回元信息
+    # 返回元信息（剔除访问凭据：持全局读 token 即可读出它，会让 per-file 凭据失去意义）
+    meta_payload = meta.model_dump(mode="json")
+    meta_payload.pop("token", None)
+
     return {
         "message": "File metadata retrieved successfully",
-        "meta": meta.model_dump(mode="json"),
+        "meta": meta_payload,
     }
