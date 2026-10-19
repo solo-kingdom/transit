@@ -39,7 +39,7 @@ async def access_file(
         raise HTTPException(status_code=404, detail="File not found")
 
     file_path = file_service.get_file_path(encoded_filename)
-    if not file_path.is_file():
+    if file_path is None:
         raise HTTPException(status_code=404, detail="File not found")
 
     meta = file_service.get_meta(encoded_filename)

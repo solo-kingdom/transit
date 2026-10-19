@@ -16,6 +16,10 @@ from ..config import settings
 from ..content import detect_content_type
 from ..models.meta import FileMeta
 
+# 元信息文件名形态：.meta.{编码文件名}.json，与文件同放在数据目录下
+META_PREFIX = ".meta."
+META_SUFFIX = ".json"
+
 
 class FileService:
     """文件服务类"""
@@ -70,7 +74,7 @@ class FileService:
         """扫描元信息文件构建访问凭据索引"""
         index: dict[str, str] = {}
 
-        for meta_path in self.data_dir.glob(".meta.*.json"):
+        for meta_path in self.data_dir.glob(f"{META_PREFIX}*{META_SUFFIX}"):
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -102,17 +106,61 @@ class FileService:
 
         return self._token_index.get(token)
 
-    def get_file_path(self, encoded_filename: str) -> Path:
+    def _safe_encoded_name(self, encoded_filename: str) -> Optional[str]:
         """
-        获取文件的完整路径（不再区分用户名）
+        校验编码文件名
+
+        必须是单个普通路径段，且不是元信息文件本身——元信息与文件同目录，且带
+        per-file 访问凭据，能按名取到它就等于拿到了该文件的凭据。
+
+        Args:
+            encoded_filename: 客户端给出的编码文件名
+
+        Returns:
+            通过校验的编码文件名；不合法时返回 None
+        """
+        if not encoded_filename or encoded_filename != Path(encoded_filename).name:
+            return None
+
+        if encoded_filename in {".", ".."}:
+            return None
+
+        if encoded_filename.startswith(META_PREFIX):
+            return None
+
+        return encoded_filename
+
+    def get_file_path(self, encoded_filename: str) -> Optional[Path]:
+        """
+        把编码文件名解析为数据目录内的普通文件
+
+        先拼接再 `resolve()`，然后用「是否仍在数据目录内」判定——`resolve()` 会展开
+        符号链接与 `..`，绝对路径在拼接时会丢弃左边的根，三种逃逸方式因此收敛成同一句
+        判定，不需要另外枚举禁止模式（与页面资源侧同一套做法）。
 
         Args:
             encoded_filename: 编码后的文件名
 
         Returns:
-            文件完整路径
+            文件路径；编码名不合法、解析结果越出数据目录、或不是普通文件时返回 None
         """
-        return self.data_dir / encoded_filename
+        name = self._safe_encoded_name(encoded_filename)
+        if name is None:
+            return None
+
+        root = self.data_dir.resolve()
+        try:
+            candidate = (root / name).resolve()
+        except (OSError, RuntimeError):
+            return None
+
+        if not candidate.is_relative_to(root):
+            return None
+
+        if not candidate.is_file():
+            return None
+
+        return candidate
 
     def get_meta_path(self, encoded_filename: str) -> Path:
         """
@@ -124,9 +172,7 @@ class FileService:
         Returns:
             元信息文件完整路径
         """
-        # 元信息文件名格式：.meta.{encoded_filename}.json
-        meta_filename = f".meta.{encoded_filename}.json"
-        return self.data_dir / meta_filename
+        return self.data_dir / f"{META_PREFIX}{encoded_filename}{META_SUFFIX}"
 
     def save_meta(
         self,
@@ -179,7 +225,11 @@ class FileService:
         Returns:
             文件元信息对象，如果不存在则返回 None
         """
-        meta_path = self.get_meta_path(encoded_filename)
+        name = self._safe_encoded_name(encoded_filename)
+        if name is None:
+            return None
+
+        meta_path = self.get_meta_path(name)
 
         if not meta_path.exists():
             return None
@@ -222,11 +272,11 @@ class FileService:
 
         # 生成编码文件名，并确保唯一（UUID 冲突概率极低，这里只是防御性检查）
         encoded_filename = self.generate_encoded_filename(original_filename)
-        file_path = self.get_file_path(encoded_filename)
+        file_path = self.data_dir / encoded_filename
 
         while file_path.exists():
             encoded_filename = self.generate_encoded_filename(original_filename)
-            file_path = self.get_file_path(encoded_filename)
+            file_path = self.data_dir / encoded_filename
 
         # 保存文件
         with open(file_path, "wb") as f:
@@ -268,7 +318,7 @@ class FileService:
         """
         file_path = self.get_file_path(encoded_filename)
 
-        if not file_path.exists():
+        if file_path is None:
             return None
 
         with open(file_path, "rb") as f:
@@ -284,8 +334,7 @@ class FileService:
         Returns:
             文件是否存在
         """
-        file_path = self.get_file_path(encoded_filename)
-        return file_path.exists() and file_path.is_file()
+        return self.get_file_path(encoded_filename) is not None
 
     def _remove_exec_permission(self, file_path: Path) -> None:
         """

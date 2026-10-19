@@ -227,3 +227,65 @@ def test_token_reverse_lookup():
     assert file_service.find_by_token(token) is not None
     assert file_service.find_by_token("no-such-token") is None
     assert file_service.find_by_token("") is None
+
+
+# ---------------------------------------------------------------- 读取路径收口
+
+
+def test_meta_file_cannot_be_downloaded_as_a_file():
+    """元信息文件带 per-file 凭据，不得作为普通文件被取走"""
+    upload("secret.txt", b"payload")
+
+    meta_files = sorted(file_service.data_dir.glob(".meta.*.json"))
+    assert meta_files, "上传后应产生元信息文件"
+    meta_name = meta_files[-1].name
+
+    response = client.get(f"/{meta_name}/anything.txt")
+    assert response.status_code == 404
+    assert "token" not in response.text
+
+
+def test_encoded_name_outside_data_dir_is_rejected():
+    """越出数据目录或不是单个路径段的编码名一律按不存在处理"""
+    for name in ("../outside.txt", "../../etc/passwd", "/etc/passwd", "sub/dir.txt", "", ".", ".."):
+        assert file_service.get_file_path(name) is None, name
+        assert file_service.read_file(name) is None, name
+        assert file_service.file_exists(name) is False, name
+        assert file_service.get_meta(name) is None, name
+
+
+def test_meta_prefixed_name_is_rejected():
+    """编码名以 .meta. 开头时直接拒绝"""
+    assert file_service.get_file_path(".meta.something.json") is None
+
+
+def test_symlink_escaping_data_dir_is_rejected(tmp_path):
+    """数据目录内指向外部的符号链接不可读"""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside the data dir", encoding="utf-8")
+
+    link = file_service.data_dir / "escape-link.txt"
+    link.unlink(missing_ok=True)
+    link.symlink_to(outside)
+
+    try:
+        assert file_service.get_file_path("escape-link.txt") is None
+        assert client.get("/escape-link.txt/whatever.txt").status_code == 404
+    finally:
+        link.unlink(missing_ok=True)
+
+
+def test_legacy_paths_still_work_and_meta_stays_unreachable():
+    """正常链路不回归：按编码名下载与查元信息仍可用，元信息文件本身取不走"""
+    data = upload("payload.txt", b"payload")
+    token = data["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    encoded = file_service.find_by_token(token)
+    assert encoded is not None
+
+    assert client.get(f"/{encoded}/payload.txt").status_code == 200
+    assert client.get(f"/{encoded}/payload.txt/meta").status_code == 200
+
+    meta_name = f".meta.{encoded}.json"
+    response = client.get(f"/{meta_name}/payload.txt")
+    assert response.status_code == 404
+    assert "token" not in response.text
