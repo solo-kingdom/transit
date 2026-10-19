@@ -49,23 +49,46 @@ async def _extract_token(
     if header_token:
         return header_token.strip()
 
-    # 3. 表单字段 token（仅当请求体是表单时才可能取到）
-    form_token: Optional[str] = None
-    content_type = request.headers.get("content-type", "")
-    if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
-        form = await request.form()
-        raw = form.get("token")
-        if isinstance(raw, str):
-            form_token = raw
-    if form_token:
-        return form_token.strip()
-
-    # 4. 查询参数 token
+    # 3. 查询参数 token（先于表单解析：命中即返回，不必碰请求体）
     query_token = request.query_params.get("token")
     if query_token:
         return query_token.strip()
 
+    # 4. 表单字段 token
+    #
+    # ⚠️ 只有端点自身会解析表单时才读表单：PUT 裸 body 上传的文件就是这个 body，
+    # 在此提前 await request.form() 会把流消费掉，上传端再读只剩 "Stream consumed"。
+    # 判断依据是路由是否声明了表单参数——用 "请求体能不能当表单读" 不够（curl
+    # --data-binary 默认就发 application/x-www-form-urlencoded，但那是文件内容）。
+    if _endpoint_accepts_form(request):
+        form = await request.form()
+        raw = form.get("token")
+        if isinstance(raw, str) and raw:
+            return raw.strip()
+
     return None
+
+
+def _endpoint_accepts_form(request: Request) -> bool:
+    """
+    判断当前路由是否声明了表单参数
+
+    只有声明了 Form/File 参数的端点才会解析请求体为表单；其余端点（如 PUT 裸 body
+    上传）的请求体是文件内容，读它就是破坏性操作。
+
+    Args:
+        request: 请求对象
+
+    Returns:
+        该路由是否接受表单
+    """
+    route = request.scope.get("route")
+    if route is None:
+        return False
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return False
+    return bool(getattr(dependant, "body_params", None))
 
 
 async def _require_token(

@@ -201,6 +201,38 @@ def test_wrong_token_rejected_from_any_source(monkeypatch):
         assert response.status_code == 401
 
 
+def test_put_bare_body_not_consumed_by_auth(monkeypatch):
+    """
+    裸 body PUT 的请求体不能被鉴权提前消费
+
+    回归：token 来自 query 时，若鉴权逻辑按 content-type 去读表单，会把 body 流读空，
+    上传端随后拿到 "Stream consumed" 报 500。curl --data-binary 默认发
+    application/x-www-form-urlencoded，是触发该问题的真实路径。
+    """
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    response = client.put(
+        "/put-test.txt?token=write-secret",
+        content=b"raw-bytes",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 200
+
+
+def test_put_body_intact_when_token_in_header(monkeypatch):
+    """PUT 用头传 token 时 body 同样完整可读"""
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "write_tokens", "write-secret")
+
+    response = client.put(
+        "/put-hdr.txt",
+        content=b"body-via-header",
+        headers={"X-Auth-Token": "write-secret", "Content-Type": "application/octet-stream"},
+    )
+    assert response.status_code == 200
+
+
 def test_publish_page_accepts_form_token(monkeypatch):
     """页面发布接口同样支持表单 token（原本就是 multipart 表单）"""
     monkeypatch.setattr(settings, "auth_enabled", True)
