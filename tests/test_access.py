@@ -66,15 +66,76 @@ def test_is_inline_whitelist():
 
 
 def test_upload_returns_self_sufficient_link():
-    """上传返回的链接自带凭据，直接 GET 即可取到文件"""
+    """上传默认走 /protect，链接自带凭据，直接 GET 即可取到文件"""
     content = b"hello self sufficient link"
     data = upload("note.txt", content)
 
-    assert "/f/" in data["download_url"]
+    assert "/protect/" in data["download_url"]
 
     response = client.get(path_of(data["download_url"]))
     assert response.status_code == 200
     assert response.content == content
+
+
+def test_upload_default_is_protect():
+    """path 与 protected 都省略时默认 /protect"""
+    data = upload("default.txt", b"default protect")
+    assert "/protect/" in data["download_url"]
+    assert "/public/" not in data["download_url"]
+
+
+def test_upload_public_via_path():
+    """只填 path=/public 时走公开链接，无需 token 段"""
+    response = client.post(
+        "/",
+        files={"file": ("open.txt", b"public content", "text/plain")},
+        data={"path": "/public"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "/public/" in data["download_url"]
+    assert client.get(path_of(data["download_url"])).content == b"public content"
+
+
+def test_upload_public_via_protected_false():
+    """只填 protected=false 时推算 /public"""
+    response = client.post(
+        "/",
+        files={"file": ("open2.txt", b"via flag", "text/plain")},
+        data={"protected": "false"},
+    )
+    assert response.status_code == 200
+    assert "/public/" in response.json()["download_url"]
+
+
+def test_upload_path_protected_mismatch_returns_400():
+    """path 与 protected 不一致时 400"""
+    response = client.post(
+        "/",
+        files={"file": ("bad.txt", b"x", "text/plain")},
+        data={"path": "/public", "protected": "true"},
+    )
+    assert response.status_code == 400
+
+
+def test_public_file_not_readable_via_encoded_guess_when_protected():
+    """受保护文件不能借 /public/{encoded}/ 绕过"""
+    data = upload("secret.txt", b"nope")
+    token = data["download_url"].split("/protect/", 1)[1].split("/", 1)[0]
+    encoded = file_service.find_by_token(token)
+    assert encoded
+    assert client.get(f"/public/{encoded}/secret.txt").status_code == 404
+
+
+def test_legacy_f_alias_still_works():
+    """旧 /f/{token}/... 链接仍可用"""
+    data = upload("legacy.txt", b"via f alias")
+    protect_path = path_of(data["download_url"])
+    assert "/protect/" in protect_path
+    legacy_path = "/f/" + protect_path.split("/protect/", 1)[1]
+    response = client.get(legacy_path)
+    assert response.status_code == 200
+    assert response.content == b"via f alias"
 
 
 def test_declared_type_does_not_override_extension():
@@ -91,7 +152,7 @@ def test_declared_type_does_not_override_extension():
 
 def test_access_with_unknown_token_returns_404():
     """凭据不匹配返回 404"""
-    response = client.get("/f/not-a-real-token/whatever.txt")
+    response = client.get("/protect/not-a-real-token/whatever.txt")
     assert response.status_code == 404
 
 
@@ -304,7 +365,7 @@ def test_range_requests_are_supported():
 def test_meta_response_hides_access_token():
     """元信息响应不暴露 per-file 凭据"""
     data = upload("secret.txt", b"payload")
-    token = data["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    token = data["download_url"].split("/protect/", 1)[1].split("/", 1)[0]
     encoded = file_service.find_by_token(token)
 
     response = client.get(f"/{encoded}/secret.txt/meta")
@@ -344,7 +405,7 @@ def test_legacy_meta_without_new_fields_is_readable(tmp_path):
 def test_token_reverse_lookup():
     """凭据反查：命中、未命中，且新上传立即可反查"""
     data = upload("lookup.txt", b"payload")
-    token = data["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    token = data["download_url"].split("/protect/", 1)[1].split("/", 1)[0]
 
     assert file_service.find_by_token(token) is not None
     assert file_service.find_by_token("no-such-token") is None
@@ -400,7 +461,7 @@ def test_symlink_escaping_data_dir_is_rejected(tmp_path):
 def test_legacy_paths_still_work_and_meta_stays_unreachable():
     """正常链路不回归：按编码名下载与查元信息仍可用，元信息文件本身取不走"""
     data = upload("payload.txt", b"payload")
-    token = data["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    token = data["download_url"].split("/protect/", 1)[1].split("/", 1)[0]
     encoded = file_service.find_by_token(token)
     assert encoded is not None
 
@@ -418,7 +479,7 @@ def test_legacy_paths_still_work_and_meta_stays_unreachable():
 
 def _expire_now(data: dict) -> str:
     """把已上传文件的过期时间改到过去，返回其编码文件名"""
-    token = data["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    token = data["download_url"].split("/protect/", 1)[1].split("/", 1)[0]
     encoded = file_service.find_by_token(token)
     assert encoded is not None
 
@@ -435,7 +496,7 @@ def test_upload_without_expiry_never_expires():
     assert response.status_code == 200
     assert "expires_at" not in response.json()
 
-    token = response.json()["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    token = response.json()["download_url"].split("/protect/", 1)[1].split("/", 1)[0]
     encoded = file_service.find_by_token(token)
     meta = file_service.get_meta(encoded)
     assert meta is not None
@@ -454,7 +515,7 @@ def test_upload_with_expiry_records_expires_at():
     body = response.json()
     assert "expires_at" in body
 
-    token = body["download_url"].split("/f/", 1)[1].split("/", 1)[0]
+    token = body["download_url"].split("/protect/", 1)[1].split("/", 1)[0]
     meta = file_service.get_meta(file_service.find_by_token(token))
     assert meta is not None
     assert meta.expires_at is not None
