@@ -9,6 +9,7 @@
 - 🔐 **Token 认证** - 支持读写分离的 token 认证，可配置多个 token
 - 🎲 **UUID 文件名** - 使用 UUID 生成唯一文件名，保护隐私
 - 🔗 **访问命名空间** - `/public` 与 `/pages` 公开可读；`/protect` 需资源级 token；上传默认 `/protect`
+- 🤖 **Agent Skill** - 仓内 `.agents/skills/transit/SKILL.md`；运行中 `GET /skill.md`，根路径嵌入同一文件
 - ⏳ **可设有效期** - 上传时可指定保留时长，过期后链接返回 `410 Gone`；默认永不过期
 - 📄 **按类型展示** - 文本、图片、音视频与 PDF 在浏览器直接展示或播放，其余触发下载；音视频支持分段请求（Range）
 - 📊 **元信息管理** - 记录文件上传时间、来源 IP、文件大小等元信息
@@ -292,6 +293,7 @@ curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
 - `GET /pages/assets/{资源路径}` - 共享资源（公开）
 - `GET /` - 根路径产品说明页（中英文，`?lang=en` 切英文）
 - `GET /health` - 健康检查
+- `GET /skill.md`（别名 `/skill`）- Agent Skill 原文（与根路径嵌入、仓内 `.agents/skills/transit/SKILL.md` 同一文件）
 
 ### 页面托管
 

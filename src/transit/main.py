@@ -9,13 +9,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from .config import settings
 from .landing import render_landing_page
 from .routers.access import router as access_router
 from .routers.files import router as files_router
 from .routers.pages import router as pages_router
+from .skill_doc import load_skill_markdown
 
 # 配置日志
 logging.basicConfig(
@@ -159,3 +160,16 @@ async def root(lang: str = Query("zh", description="页面语言：zh 或 en")):
 async def health():
     """健康检查端点"""
     return {"status": "healthy"}
+
+
+@app.get("/skill.md", response_class=PlainTextResponse)
+@app.get("/skill", response_class=PlainTextResponse)
+async def agent_skill():
+    """
+    Agent Skill 原文（与落地页嵌入、仓库 .agents/skills/transit/SKILL.md 同一文件）
+    """
+    return PlainTextResponse(
+        load_skill_markdown(),
+        media_type="text/markdown; charset=utf-8",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
