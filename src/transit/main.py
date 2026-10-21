@@ -130,7 +130,7 @@ app.add_middleware(
 )
 
 # 注册路由
-# 顺序敏感：文件路由的下载路径首段是变量，会吃掉 /f/{token}/{原文件名}、/pages/<category>/
+# 顺序敏感：文件路由的下载路径首段是变量，会吃掉 /public、/protect、/f、/pages
 # 这类路径，必须让访问与页面托管路由先注册，否则它们会静默落到文件路由上
 app.include_router(access_router, tags=["access"])
 app.include_router(pages_router, tags=["pages"])

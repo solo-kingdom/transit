@@ -183,6 +183,7 @@ class FileService:
         token: str,
         content_type: str,
         expires_in: Optional[int] = None,
+        protected: bool = True,
     ) -> FileMeta:
         """
         保存文件元信息
@@ -195,6 +196,7 @@ class FileService:
             token: 访问凭据
             content_type: 内容类型
             expires_in: 有效期（秒）；None 表示永不过期
+            protected: 是否受保护（/protect）；False 时走 /public
 
         Returns:
             文件元信息对象
@@ -207,6 +209,7 @@ class FileService:
             remote_address=remote_address,
             file_size=file_size,
             token=token,
+            protected=protected,
             content_type=content_type,
             expires_at=now + timedelta(seconds=expires_in) if expires_in else None,
         )
@@ -274,6 +277,7 @@ class FileService:
         remote_address: str,
         declared_content_type: Optional[str] = None,
         expires_in: Optional[int] = None,
+        protected: bool = True,
     ) -> tuple[str, FileMeta]:
         """
         保存上传的文件
@@ -284,6 +288,7 @@ class FileService:
             remote_address: 上传者 IP 地址
             declared_content_type: 上传请求声明的内容类型（仅在扩展名推导不出时采用）
             expires_in: 有效期（秒）；None 表示永不过期
+            protected: 是否受保护；默认 True（/protect）
 
         Returns:
             元组：(编码后的文件名, 文件元信息)
@@ -324,6 +329,7 @@ class FileService:
             token=token,
             content_type=content_type,
             expires_in=expires_in,
+            protected=protected,
         )
 
         # 写入索引，使新文件立刻可被反查到

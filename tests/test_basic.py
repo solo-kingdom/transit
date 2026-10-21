@@ -109,7 +109,7 @@ def test_get_file_meta():
 
     # 下载链接只携带访问凭据，不再暴露编码文件名；
     # 元信息路由按编码文件名定位，故用凭据反查
-    token = download_url.split("/f/", 1)[1].split("/", 1)[0]
+    token = download_url.split("/protect/", 1)[1].split("/", 1)[0]
     encoded = file_service.find_by_token(token)
     assert encoded is not None
     original = "meta_test.txt"

@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import secrets
 import shutil
 import zipfile
 from datetime import date
@@ -168,11 +169,39 @@ class PagesService:
 
     # ---------------------------------------------------------------- 发布
 
+    def get_page_entry(self, category: str, slug: str) -> Optional[dict]:
+        """从事实源取页面条目；不存在返回 None"""
+        registry = self.load_registry()
+        for cat in registry.get("categories", []):
+            if cat.get("slug") != category:
+                continue
+            for page in cat.get("pages", []):
+                if page.get("slug") == slug:
+                    return page
+        return None
+
+    def find_by_token(self, token: str) -> Optional[tuple[str, str, dict]]:
+        """
+        按页面访问凭据反查
+
+        Returns:
+            (category_slug, slug, entry)；未命中返回 None
+        """
+        if not token:
+            return None
+        registry = self.load_registry()
+        for cat in registry.get("categories", []):
+            for page in cat.get("pages", []):
+                if page.get("protected") and page.get("token") == token:
+                    return str(cat.get("slug") or ""), str(page.get("slug") or ""), page
+        return None
+
     def publish(
         self,
         meta: dict,
         html: Optional[str] = None,
         bundle: Optional[bytes] = None,
+        protected: bool = False,
     ) -> dict:
         """
         发布一个页面
@@ -183,9 +212,11 @@ class PagesService:
             meta: 页面元信息（category/slug/title/desc/tags/date/...）
             html: HTML 正文（单文件页面）
             bundle: zip 包内容（多文件页面）
+            protected: True 时走 /protect/{token}/...，不出现在公开索引
 
         Returns:
-            {"url": ..., "category_url": ...}，均为站内相对路径
+            {"url": ..., "category_url": ...}，均为站内相对路径；
+            受保护时另含 token
 
         Raises:
             PageError: 入参不合法、事实源与落盘不一致、或自检未通过
@@ -236,6 +267,10 @@ class PagesService:
             categories.append(category)
 
         path = f"{category_slug}/{slug}/"
+        previous_entry = next(
+            (p for p in category.get("pages", []) if p.get("path") == path),
+            None,
+        )
         entry = {
             "slug": slug,
             "title": title,
@@ -243,7 +278,11 @@ class PagesService:
             "path": path,
             "date": published_on,
             "tags": tags,
+            "protected": protected,
         }
+        if protected:
+            # 覆盖发布时尽量复用原凭据，避免旧链接失效
+            entry["token"] = (previous_entry or {}).get("token") or secrets.token_urlsafe(16)
         pages = [p for p in category.get("pages", []) if p.get("path") != path]
         category["pages"] = pages + [entry]
 
@@ -277,7 +316,7 @@ class PagesService:
             if problems:
                 raise PageError("发布后一致性校验失败：" + "；".join(problems))
 
-            self._verify(category_slug, slug, title, path)
+            self._verify(category_slug, slug, title, path, protected=protected)
         except Exception:
             self._restore_page(target, tmp, backup, existed)
             self._restore_registry(previous_registry)
@@ -285,7 +324,14 @@ class PagesService:
         else:
             shutil.rmtree(backup, ignore_errors=True)
 
-        return {"url": f"/pages/{path}", "category_url": f"/pages/{category_slug}/"}
+        category_url = f"/pages/{category_slug}/"
+        if protected:
+            return {
+                "url": f"/protect/{entry['token']}/{path}",
+                "category_url": category_url,
+                "token": entry["token"],
+            }
+        return {"url": f"/pages/{path}", "category_url": category_url}
 
     def _extract_bundle(self, bundle: bytes, target: Path) -> None:
         """
@@ -390,12 +436,20 @@ class PagesService:
 
     # ---------------------------------------------------------------- 自检
 
-    def _verify(self, category_slug: str, slug: str, title: str, path: str) -> None:
+    def _verify(
+        self,
+        category_slug: str,
+        slug: str,
+        title: str,
+        path: str,
+        *,
+        protected: bool = False,
+    ) -> None:
         """
-        发布后自检公开可用性
+        发布后自检
 
-        断言页面入口非空、事实源含该条目、索引页与分类页的渲染结果中
-        均出现该页面的标题与路径。
+        公开页：入口非空、事实源有条目，且索引/分类渲染含标题与路径。
+        受保护页：只验入口与事实源（不出现在公开索引是预期行为）。
         """
         entry = self.page_entry(category_slug, slug)
         if not entry.is_file() or not entry.read_text(encoding="utf-8").strip():
@@ -407,6 +461,9 @@ class PagesService:
         ]
         if path not in registered:
             raise PageError("验活失败：事实源缺少该条目")
+
+        if protected:
+            return
 
         expected = (html_module.escape(title), html_module.escape(path))
         rendered = {

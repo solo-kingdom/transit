@@ -8,7 +8,7 @@
 - 🐳 **一体化镜像** - Caddy 已集成到镜像中，简化部署
 - 🔐 **Token 认证** - 支持读写分离的 token 认证，可配置多个 token
 - 🎲 **UUID 文件名** - 使用 UUID 生成唯一文件名，保护隐私
-- 🔗 **自足链接** - 上传返回带 per-file 访问凭据的完整 URL，拿到链接即可访问，不必再带认证头
+- 🔗 **访问命名空间** - `/public` 与 `/pages` 公开可读；`/protect` 需资源级 token；上传默认 `/protect`
 - ⏳ **可设有效期** - 上传时可指定保留时长，过期后链接返回 `410 Gone`；默认永不过期
 - 📄 **按类型展示** - 文本、图片、音视频与 PDF 在浏览器直接展示或播放，其余触发下载；音视频支持分段请求（Range）
 - 📊 **元信息管理** - 记录文件上传时间、来源 IP、文件大小等元信息
@@ -187,15 +187,16 @@ curl --upload-file /path/to/file http://localhost:9200
 
 ```json
 {
-  "download_url": "http://192.168.1.100:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt"
+  "download_url": "http://192.168.1.100:9200/protect/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt"
 }
 ```
 
 **注意**：
 
 - `download_url` 包含完整的 URL（包含自动检测的本机 IP 或配置的 host）
-- 链接中间那一段是该文件专属的**访问凭据**：拿到链接即可取到文件，不需要再带认证头
-- 即便服务开启了认证，这个链接依然直接可用
+- 默认走 **`/protect/{token}/...`**：中间一段是该文件专属访问凭据，拿到链接即可取，不必再带全局认证头
+- 需要公开文件时传 `path=/public` 或 `protected=false`，得到 `/public/{encoded}/...`
+- 旧链接 `/f/{token}/...` 仍可用，语义同 `/protect`
 
 ### 设置有效期
 
@@ -213,12 +214,12 @@ curl -T report.pdf "http://localhost:9200/report.pdf?expires_in=604800"
 
 ```json
 {
-  "download_url": "http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/report.pdf",
+  "download_url": "http://localhost:9200/protect/8Kd2mQx1vTb7nR4pZ0aLcA/report.pdf",
   "expires_at": "2026-10-19T20:35:09"
 }
 ```
 
-- 过期后，自足链接与按编码名下载 / 查元信息都返回 **`410 Gone`**（区分「过期」与「不存在」的 404）
+- 过期后，访问链接与按编码名下载 / 查元信息都返回 **`410 Gone`**（区分「过期」与「不存在」的 404）
 - 过期文件不会被自动删除，需要空间时可再用 `scripts/manage.py clean --days N` 清理
 - `expires_in` 不是正整数时返回 `400`
 - 升级前上传、元信息里没有 `expires_at` 的老文件视为永不过期
@@ -229,10 +230,10 @@ curl -T report.pdf "http://localhost:9200/report.pdf?expires_in=604800"
 
 ```bash
 # wget
-wget http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt
+wget http://localhost:9200/protect/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt
 
 # curl
-curl -O http://localhost:9200/f/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt
+curl -O http://localhost:9200/protect/8Kd2mQx1vTb7nR4pZ0aLcA/file.txt
 ```
 
 **返回处置按内容类型决定**：
@@ -274,9 +275,12 @@ curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
 
 ### API 端点
 
-- `POST /` - 上传文件（multipart/form-data 格式，可选表单字段 `expires_in` 秒数）
-- `PUT /` 和 `PUT /{path}` - 上传文件（原始文件内容，支持 curl --upload-file；可选 query `expires_in` 秒数）
-- `GET /f/{token}/{original_filename}` - 按访问凭据访问文件（上传返回的链接形态）
+- `POST /` - 上传文件（multipart；可选 `expires_in` / `path` / `protected`）
+- `PUT /` 和 `PUT /{upload_path}` - 上传文件（裸 body；可选 query `expires_in` / `path` / `protected`）
+- `GET /protect/{token}/{original_filename}` - 受保护文件（上传默认返回形态）
+- `GET /public/{encoded_filename}/{original_filename}` - 公开文件
+- `GET /f/{token}/{original_filename}` - `/protect` 的兼容别名
+- `GET /protect/{token}/{category}/{slug}/` - 受保护页面入口
 - `GET /{encoded_filename}/{original_filename}` - 按编码文件名下载文件（旧链接，仍可用）
 - `GET /{encoded_filename}/{original_filename}/meta` - 获取文件元信息
 - `POST /pages/publish` - 发布页面，单文件传 HTML 字符串、带资源传 zip 包（需写凭据）
@@ -291,7 +295,7 @@ curl http://localhost:9200/AbCdEf123456.txt/file.txt/meta
 
 ### 页面托管
 
-服务可以托管按分类组织的 HTML 页面：发布后即公开可浏览。一个页面就是一个目录，可以带任意静态资源；多个页面共用集中存放的共享资源。
+服务可以托管按分类组织的 HTML 页面：默认发布到 `/pages` 公开可浏览；也可 `protected=true` 或 `path=/protect` 发布到受保护命名空间。一个页面就是一个目录，可以带任意静态资源；多个页面共用集中存放的共享资源。
 
 **发布单文件页面**（只有 HTML，没有别的资源）：
 
@@ -308,12 +312,14 @@ curl -X POST http://localhost:9200/pages/publish \
 
 > HTML 字段用 `--form-string` 而不是 `-F`：`-F` 里以 `<` 开头的值会被 curl 当成「从文件读取」，会直接报错或读到别的内容。也可以写成 `-F 'html=<page.html'` 明确从文件读。
 
-**发布带资源的页面**：把页面目录打成 zip 传上去，包内就是页面目录、入口固定为 `index.html`：
+**发布带资源的页面（多文件一次上传）**：把页面目录打成 zip，入口固定 `index.html`。  
+这是 **HTML + 静态资源作为一次上传** 的正路径——公开走 `/pages`，受保护加 `protected=true`（或 `path=/protect`），**一个 token 罩住整包**，不另做文件侧 bundle API。
 
 ```bash
 # 目录结构：page/index.html、page/style.css、page/assets/logo.png
 cd page && zip -r ../page.zip . && cd ..
 
+# 公开多文件页
 curl -X POST http://localhost:9200/pages/publish \
   -H "Authorization: Bearer <write-token>" \
   -F category=guide \
@@ -322,9 +328,35 @@ curl -X POST http://localhost:9200/pages/publish \
   -F desc=一句话摘要 \
   -F category_name=指南 \
   -F bundle=@page.zip
+
+# 受保护多文件页（同一 zip，多一个 protected）
+curl -X POST http://localhost:9200/pages/publish \
+  -H "Authorization: Bearer <write-token>" \
+  -F category=guide \
+  -F slug=private-site \
+  -F title=私享页 \
+  -F desc=一句话摘要 \
+  -F category_name=指南 \
+  -F protected=true \
+  -F bundle=@page.zip
 ```
 
-页面里用相对路径引用自己的资源即可（`./style.css`、`./assets/logo.png`），会解析到 `/pages/guide/with-assets/style.css` 这类地址。
+相对路径引用资源即可：
+
+- 公开：`./style.css` → `/pages/guide/with-assets/style.css`
+- 受保护：`./style.css` → `/protect/{token}/guide/private-site/style.css`（与入口共用同一 token）
+
+受保护响应示例：
+
+```json
+{
+  "url": "http://localhost:9200/protect/<token>/guide/private-site/",
+  "category_url": "http://localhost:9200/pages/guide/",
+  "token": "<token>"
+}
+```
+
+公开响应则是 `/pages/guide/with-assets/`，无 `token` 字段。受保护页**不出现在** `/pages/` 索引，也不能从 `/pages/{cat}/{slug}/` 绕过。
 
 **发布共享资源**（所有页面都能用绝对路径 `/pages/assets/<路径>` 引用）：
 
@@ -335,28 +367,19 @@ curl -X POST http://localhost:9200/pages/assets \
   -F file=@main.css
 ```
 
-两个发布接口都返回公开链接：
-
-```json
-{
-  "url": "http://localhost:9200/pages/guide/with-assets/",
-  "category_url": "http://localhost:9200/pages/guide/"
-}
-```
-
 `category_name` 只在分类尚不存在时需要；分类已存在时忽略。
 
-**浏览**：打开 `url` 即页面；`/pages/` 是索引页，`/pages/<category>/` 是分类页。都不需要凭据。
+**浏览**：打开返回的 `url` 即页面；公开站还有 `/pages/` 索引与 `/pages/<category>/` 分类页。
 
 **约定与行为**：
 
 - `category` 与 `slug` 必须是 kebab-case（小写字母、数字与连字符）；`assets` 是共享资源的保留分类名
 - 公开路径一律带尾斜杠；不带尾斜杠的 `/pages/<category>` 会重定向到带尾斜杠版本
-- 发布时会校验分类结构与磁盘内容一致（登记了却没有文件、有文件却没登记，都会拒绝发布），并在写入后用索引页与分类页的渲染结果做一次自检
+- 发布时会校验分类结构与磁盘内容一致（登记了却没有文件、有文件却没登记，都会拒绝发布）；公开页还会用索引/分类渲染做自检
 - 替换已有页面是原子的；若发布中途失败，原内容会被恢复，不会把已发布的页面弄丢
 - 页面存在数据目录的 `pages/` 子目录下，与普通上传的文件分开
-- **资源访问有边界**：每个资源请求解析出的真实路径必须落在该页面自己的目录（共享资源则限于共享资源目录）内。`..` 上跳、绝对路径、符号链接逃逸一律拒绝，页面读不到自己目录之外的文件，也触达不到数据目录里带访问凭据的元信息
-- **发布即公开**，没有审核环节：写凭据的持有者可以直接在该域名下发布任意 HTML 页面
+- **资源访问有边界**：每个资源请求解析出的真实路径必须落在该页面自己的目录（共享资源则限于共享资源目录）内。`..` 上跳、绝对路径、符号链接逃逸一律拒绝
+- 写凭据持有者可直接发布；默认进公开 `/pages`，需要链接自足保密时用 `protected=true`
 
 ## 配置
 
@@ -422,13 +445,54 @@ curl -H "Authorization: Bearer read123" http://localhost:9200/AbCdEf123456.txt/f
 
 **认证说明**：
 
-- `READ_TOKENS`：按编码文件名下载文件（旧路径）与查询 `/meta` 时使用
+- `READ_TOKENS`：按编码文件名下载（旧路径）与查询 `/meta` 时使用（**meta 受保护状态不变**）
 - `WRITE_TOKENS`：上传文件、发布页面 / 共享资源时使用
 - 多个 token 用逗号分隔；命中第一个非空来源即用它校验，不叠加
 - 缺凭据返回 `401 Missing authentication token`，凭据不在白名单返回 `401 Invalid <read|write> token`
-- 裸 body 的 `PUT /{path}` 上传（`curl --upload-file`）请求体就是文件本身，鉴权不会去读它，因此只能走请求头或 query，不能用表单 `token`
-- 上传返回的 `/f/{token}/...` 链接**不需要**任何认证头：链接里的凭据就是访问方式，与是否开启认证无关
-- ⚠️ query 传 token 会进入访问日志、浏览器历史与 `Referer`，仅在确实不便设头 / 表单时使用
+- 裸 body 的 `PUT /{upload_path}` 上传请求体就是文件本身，鉴权不会去读它，因此只能走请求头或 query，不能用表单 `token`
+- `/protect/{token}/...`（及旧 `/f/...`）**不需要**全局读 token：路径里的凭据就是访问方式
+- `/public/...` 与 `/pages/...` 公开可读；受保护页面不得从 `/pages/{cat}/{slug}/` 绕过
+- ⚠️ query 传写 token 会进入访问日志、浏览器历史与 `Referer`，仅在确实不便设头 / 表单时使用
+
+### 多文件（HTML + 静态资源）怎么传
+
+| 场景 | 做法 |
+| --- | --- |
+| 单文件（任意类型） | `POST /` / `PUT /`，默认 `/protect/{token}/文件名` |
+| HTML + 若干静态资源，一次上传 | `POST /pages/publish` + `bundle=@site.zip`；要保密则再加 `protected=true` |
+| 不要做 | 对每个资源各传一次 `POST /` 再手拼链接（token 对不齐，相对路径也断） |
+
+### 访问路径与 `protected` 参数
+
+上传文件（POST 表单 / PUT query）与发布页面（表单）均可选传：
+
+| 参数 | 含义 |
+| --- | --- |
+| `path` | 访问命名空间：文件用 `/public` 或 `/protect`；页面用 `/pages` 或 `/protect` |
+| `protected` | 是否受保护（`true` / `false`） |
+
+规则（二者皆可选）：
+
+| path | protected | 结果 |
+| --- | --- | --- |
+| 省略 | 省略 | 文件 → `/protect`；页面 → `/pages` |
+| 有 | 省略 | 由前缀推算是否保护 |
+| 省略 | 有 | `true`→`/protect`；`false`→文件 `/public` / 页面 `/pages` |
+| 有 | 有 | 必须一致，否则 `400` |
+
+```bash
+# 默认受保护
+curl -F file=@a.txt http://localhost:9200/
+
+# 公开文件
+curl -F file=@a.txt -F path=/public http://localhost:9200/
+curl -F file=@a.txt -F protected=false http://localhost:9200/
+
+# 受保护页面
+curl -F category=guide -F slug=private -F title=密 -F desc=摘要 \
+  -F html='<h1>hi</h1>' -F category_name=指南 -F protected=true \
+  http://localhost:9200/pages/publish
+```
 
 ### 读写分离架构
 

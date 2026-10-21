@@ -17,6 +17,7 @@ from fastapi import (
 from fastapi.responses import Response
 from typing import Optional
 
+from ..access_intent import parse_optional_bool, resolve_access_intent
 from ..auth import verify_write_token, verify_read_token
 from ..config import settings
 from ..content import content_disposition
@@ -117,13 +118,16 @@ def _build_upload_response(
     """
     构造统一的上传成功响应结构
 
-    根据需求，上传接口只返回下载链接，避免冗余信息泄露。
-
-    链接自带该文件专属的访问凭据，拿到链接即可取到文件，不必再带认证头。
+    受保护：/protect/{token}/{original}
+    公开：/public/{encoded}/{original}
     """
-    # 访问 URL: /f/{token}/{original_filename}
     original_for_path = quote(meta.original_filename, safe="")
-    download_url = f"{get_download_base_url(request)}/f/{meta.token}/{original_for_path}"
+    base = get_download_base_url(request)
+    if meta.protected:
+        download_url = f"{base}/protect/{meta.token}/{original_for_path}"
+    else:
+        encoded_for_path = quote(encoded_filename, safe="")
+        download_url = f"{base}/public/{encoded_for_path}/{original_for_path}"
 
     # 最小化响应体：仅返回下载 URL；设置有效期时附带过期时间
     payload = {"download_url": download_url}
@@ -137,6 +141,8 @@ async def _upload_file_post(
     file: UploadFile,
     token: Optional[str],
     expires_in: Optional[int] = None,
+    access_path: Optional[str] = None,
+    protected_raw=None,
 ):
     """
     POST 上传文件的实际处理逻辑
@@ -146,10 +152,17 @@ async def _upload_file_post(
         file: 上传的文件
         token: 认证 token（如果启用认证）
         expires_in: 有效期（秒）；None 表示永不过期
+        access_path: 访问命名空间路径（/public 或 /protect）
+        protected_raw: 是否受保护（原始表单值）
 
     Returns:
         包含完整下载 URL 的响应
     """
+    intent = resolve_access_intent(
+        "file",
+        path=access_path,
+        protected=parse_optional_bool(protected_raw),
+    )
     try:
         # 读取文件内容
         content = await file.read()
@@ -164,6 +177,7 @@ async def _upload_file_post(
             remote_address=remote_address,
             declared_content_type=file.content_type,
             expires_in=expires_in,
+            protected=intent.protected,
         )
 
         # 构造统一的上传成功响应
@@ -180,23 +194,37 @@ async def upload_file_post(
     request: Request,
     file: UploadFile = File(..., description="要上传的文件"),
     expires_in: Optional[str] = Form(None, description="有效期（秒，正整数）；不填表示永不过期"),
+    path: Optional[str] = Form(None, description="访问路径：/public 或 /protect；可省略"),
+    protected: Optional[str] = Form(
+        None, description="是否受保护；可省略。与 path 都省略时默认 /protect"
+    ),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
     使用 POST 方法上传文件（multipart/form-data 格式）
 
     已移除用户名逻辑，统一走单一命名空间。
+    可选 path / protected 决定读链接走 /public 还是 /protect（默认受保护）。
 
     Args:
         request: 请求对象
         file: 上传的文件
         expires_in: 有效期（秒，正整数）；不填表示永不过期
+        path: 访问命名空间
+        protected: 是否受保护
         token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应；设置有效期时含 expires_at
     """
-    return await _upload_file_post(request, file, token, _parse_expires_in(expires_in))
+    return await _upload_file_post(
+        request,
+        file,
+        token,
+        _parse_expires_in(expires_in),
+        access_path=path,
+        protected_raw=protected,
+    )
 
 
 async def _upload_file_put(
@@ -204,6 +232,8 @@ async def _upload_file_put(
     token: Optional[str],
     filename_from_path: Optional[str] = None,
     expires_in: Optional[int] = None,
+    access_path: Optional[str] = None,
+    protected_raw=None,
 ):
     """
     PUT 上传文件的实际处理逻辑
@@ -213,10 +243,17 @@ async def _upload_file_put(
         token: 认证 token（如果启用认证）
         filename_from_path: 从 URL 路径中提取的文件名（可选）
         expires_in: 有效期（秒）；None 表示永不过期
+        access_path: 访问命名空间（query path）
+        protected_raw: 是否受保护（原始 query 值）
 
     Returns:
         包含完整下载 URL 的响应
     """
+    intent = resolve_access_intent(
+        "file",
+        path=access_path,
+        protected=parse_optional_bool(protected_raw),
+    )
     try:
         # 读取原始文件内容
         content = await request.body()
@@ -262,6 +299,7 @@ async def _upload_file_put(
             remote_address=remote_address,
             declared_content_type=request.headers.get("content-type"),
             expires_in=expires_in,
+            protected=intent.protected,
         )
 
         # 构造响应（PUT 方式需要在使用默认文件名时附加 hint）
@@ -282,6 +320,10 @@ async def _upload_file_put(
 async def upload_file_put_root(
     request: Request,
     expires_in: Optional[str] = Query(None, description="有效期（秒，正整数）；不填表示永不过期"),
+    path: Optional[str] = Query(None, description="访问路径：/public 或 /protect；可省略"),
+    protected: Optional[str] = Query(
+        None, description="是否受保护；可省略。与 path 都省略时默认 /protect"
+    ),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
@@ -294,46 +336,67 @@ async def upload_file_put_root(
     Args:
         request: 请求对象
         expires_in: 有效期（秒，正整数）；不填表示永不过期
+        path: 访问命名空间
+        protected: 是否受保护
         token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应；设置有效期时含 expires_at
     """
-    return await _upload_file_put(request, token, expires_in=_parse_expires_in(expires_in))
+    return await _upload_file_put(
+        request,
+        token,
+        expires_in=_parse_expires_in(expires_in),
+        access_path=path,
+        protected_raw=protected,
+    )
 
 
-@router.put("/{path:path}")
+@router.put("/{upload_path:path}")
 async def upload_file_put(
     request: Request,
-    path: str = PathParam(..., description="文件路径（用来推断文件名，可选）"),
+    upload_path: str = PathParam(..., description="URL 路径，仅用来推断原始文件名"),
     expires_in: Optional[str] = Query(None, description="有效期（秒，正整数）；不填表示永不过期"),
+    path: Optional[str] = Query(None, description="访问路径：/public 或 /protect；可省略"),
+    protected: Optional[str] = Query(
+        None, description="是否受保护；可省略。与 path 都省略时默认 /protect"
+    ),
     token: Optional[str] = Depends(verify_write_token),
 ):
     """
     使用 PUT 方法上传文件（原始文件内容）
     支持 curl --upload-file 命令，且移除了 username 的语义，只保留“文件名”语义。
 
+    URL 路径只推断文件名；访问命名空间用 query 的 path / protected。
+
     Args:
         request: 请求对象
-        path: 请求路径（例如 apollo.log 或 logs/apollo.log）
+        upload_path: 请求路径（例如 apollo.log 或 logs/apollo.log）
         expires_in: 有效期（秒，正整数）；不填表示永不过期
+        path: 访问命名空间
+        protected: 是否受保护
         token: 认证 token（如果启用认证）
 
     Returns:
         包含完整下载 URL 的响应；设置有效期时含 expires_at
     """
-    # 整个 path 只用来推断原始文件名，与存储路径无关
+    # 整个 upload_path 只用来推断原始文件名，与存储 / 访问命名空间无关
     # 例如:
     #   curl -T file.log http://server/file.log         -> original_filename: file.log
     #   curl -T file.log http://server/logs/file.log    -> original_filename: file.log
     #   curl -T file.log http://server/                 -> original_filename: 基于时间戳的默认名
-    if path:
-        filename_from_path = path.split("/")[-1]
+    if upload_path:
+        filename_from_path = upload_path.split("/")[-1]
     else:
         filename_from_path = None
 
     return await _upload_file_put(
-        request, token, filename_from_path, _parse_expires_in(expires_in)
+        request,
+        token,
+        filename_from_path,
+        _parse_expires_in(expires_in),
+        access_path=path,
+        protected_raw=protected,
     )
 
 

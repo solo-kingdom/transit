@@ -198,7 +198,9 @@ def _cabinet(active: Optional[str] = None, right: str = "") -> str:
 
 
 def _sorted_pages(category: dict) -> list[dict]:
-    return sorted(category.get("pages", []), key=lambda p: p.get("date", ""), reverse=True)
+    """公开索引只列未保护页面；受保护页不出现在 /pages 列表里"""
+    public = [p for p in category.get("pages", []) if not p.get("protected")]
+    return sorted(public, key=lambda p: p.get("date", ""), reverse=True)
 
 
 def render_index_page(registry: dict) -> str:

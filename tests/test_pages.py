@@ -443,3 +443,82 @@ def test_pages_paths_are_not_swallowed_by_file_routes():
     entry = client.get(f"/pages/{CATEGORY}/routed-page/")
     assert entry.status_code == 200
     assert "路由验证正文" in entry.text
+
+
+# ---------------------------------------------------------------- 受保护页面
+
+
+def test_publish_protected_page():
+    """受保护页返回 /protect 链接；公开路径 404；凭据路径可读；不进公开索引"""
+    response = publish("secret-page", title="机密页", html="<h1>机密正文</h1>", protected="true")
+    assert response.status_code == 200
+    body = response.json()
+    assert "/protect/" in body["url"]
+    assert "token" in body
+
+    assert client.get(f"/pages/{CATEGORY}/secret-page/").status_code == 404
+
+    from urllib.parse import urlparse
+
+    protect_path = urlparse(body["url"]).path
+    entry = client.get(protect_path)
+    assert entry.status_code == 200
+    assert "机密正文" in entry.text
+
+    index = client.get("/pages/")
+    assert index.status_code == 200
+    assert "机密页" not in index.text
+
+
+def test_publish_protected_bundle_serves_relative_assets():
+    """受保护多文件：一个 token 罩住入口与相对静态资源；公开路径不可绕过"""
+    from urllib.parse import urlparse
+
+    response = publish_bundle(
+        "secret-bundle",
+        {
+            "index.html": (
+                b'<html><link rel="stylesheet" href="./style.css">'
+                b"<h1>secret-bundle</h1></html>"
+            ),
+            "style.css": b"body{color:navy}",
+            "assets/logo.svg": b"<svg></svg>",
+        },
+        protected="true",
+        title="secret-bundle-page",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    base = urlparse(body["url"]).path.rstrip("/") + "/"
+
+    assert client.get(f"/pages/{CATEGORY}/secret-bundle/").status_code == 404
+    assert client.get(f"/pages/{CATEGORY}/secret-bundle/style.css").status_code == 404
+
+    entry = client.get(base)
+    assert entry.status_code == 200
+    assert "secret-bundle" in entry.text
+
+    style = client.get(base + "style.css")
+    assert style.status_code == 200
+    assert style.content == b"body{color:navy}"
+
+    logo = client.get(base + "assets/logo.svg")
+    assert logo.status_code == 200
+    assert logo.content == b"<svg></svg>"
+
+    # 错 token 不能读
+    assert client.get(f"/protect/not-the-token/{CATEGORY}/secret-bundle/").status_code == 404
+    assert client.get(f"/protect/not-the-token/{CATEGORY}/secret-bundle/style.css").status_code == 404
+
+
+def test_publish_path_protect_infers_protected():
+    """只填 path=/protect 时推算受保护"""
+    response = publish("via-path", html="<h1>x</h1>", path="/protect")
+    assert response.status_code == 200
+    assert "/protect/" in response.json()["url"]
+
+
+def test_publish_path_protected_mismatch():
+    """path=/pages 与 protected=true 不一致时 400"""
+    response = publish("mismatch", html="<h1>x</h1>", path="/pages", protected="true")
+    assert response.status_code == 400
