@@ -18,6 +18,7 @@ def test_root_zh():
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
     assert "文件" in body
+    assert "Agent Skill" in body
     for url in ("exploring.fun", "wii.pub", "solo.wii.pub", "dove.wii.pub"):
         assert url in body
 

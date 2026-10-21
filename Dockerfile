@@ -33,6 +33,8 @@ COPY config/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # 复制项目文件（pip install -e . 需要这些文件）
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
+# Agent Skill：落地页与 /skill.md 运行时读此文件（勿另抄一份文案）
+COPY .agents/skills/transit/ ./.agents/skills/transit/
 
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -e .

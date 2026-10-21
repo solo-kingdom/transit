@@ -5,10 +5,15 @@
 以及能去哪里。页面用服务端渲染（同一个进程，不必再拉前端构建），
 中英文两版共用一套样式，靠查询参数切换。
 
+Agent Skill 直接嵌入仓内 `.agents/skills/transit/SKILL.md`（运行时读文件），
+与 GET /skill.md 同源，改 skill 不必再改本页文案。
+
 机器可读的服务信息仍在 /health；本页只在页脚展示 service / version。
 """
 
 import html
+
+from .skill_doc import load_skill_markdown
 
 # 服务名与版本由调用方注入（来自 settings），避免此处再读一遍配置
 DEFAULT_TITLE = "Transit · 文件中转与页面托管"
@@ -59,13 +64,17 @@ COPY = {
             ("按类型展示", "文本、图片、音视频与 PDF 直接在浏览器打开或播放，音视频支持拖动进度。"),
             ("页面托管", "发布单文件 HTML 或整包页面目录，按分类组织，发布后公开可浏览。"),
             ("安全隔离", "上传文件自动去掉执行权限，元信息文件不可被直接取走，读写凭据分离。"),
+            ("Agent Skill", "根路径嵌入仓内 SKILL.md；Agent 也可拉取 /skill.md 原文操作本服务。"),
         ],
         "usage_title": "怎么用",
         "usage": [
             ("上传文件", "curl --upload-file ./report.pdf https://transit.wii.pub/"),
             ("发布页面", "curl -X POST https://transit.wii.pub/pages/publish -H \"Authorization: Bearer <write-token>\" -F category=note -F slug=hello -F title=你好 -F desc=摘要 --form-string html='<h1>正文</h1>'"),
             ("浏览页面", "https://transit.wii.pub/pages/"),
+            ("拉取 Agent Skill", "curl -fsS https://transit.wii.pub/skill.md"),
         ],
+        "skill_title": "Agent Skill（嵌入自仓库文件）",
+        "skill_note": "以下内容与仓库 .agents/skills/transit/SKILL.md 及本站 /skill.md 为同一文件，改 skill 只需改仓库。",
         "links_title": "看看别处",
         "footer_note": "由 transit 托管",
     },
@@ -86,13 +95,17 @@ COPY = {
             ("Type-aware display", "Text, images, audio, video and PDF render or play in the browser; media supports range requests for seeking."),
             ("Page hosting", "Publish a single-file HTML page or a full bundle, organised by category, public once released."),
             ("Safety first", "Uploaded files lose their execute bit, metadata files cannot be fetched, and read/write credentials stay separate."),
+            ("Agent Skill", "This page embeds the repo SKILL.md; agents can also fetch /skill.md."),
         ],
         "usage_title": "How to use",
         "usage": [
             ("Upload a file", "curl --upload-file ./report.pdf https://transit.wii.pub/"),
             ("Publish a page", "curl -X POST https://transit.wii.pub/pages/publish -H \"Authorization: Bearer <write-token>\" -F category=note -F slug=hello -F title=Hello -F desc=Summary --form-string html='<h1>Body</h1>'"),
             ("Browse pages", "https://transit.wii.pub/pages/"),
+            ("Fetch Agent Skill", "curl -fsS https://transit.wii.pub/skill.md"),
         ],
+        "skill_title": "Agent Skill (embedded from the repo file)",
+        "skill_note": "Same file as .agents/skills/transit/SKILL.md and /skill.md — edit the repo once.",
         "links_title": "Elsewhere",
         "footer_note": "hosted by transit",
     },
@@ -135,6 +148,12 @@ h2 {{ font-family:"Noto Serif SC","Songti SC",SimSun,serif; font-weight:600;
 .snippet .label {{ font-size:13px; color:#8A9198; margin-bottom:8px; }}
 .snippet code {{ display:block; font:13px/1.7 ui-monospace,"SF Mono",Consolas,monospace;
   color:var(--ink); white-space:pre-wrap; word-break:break-all; }}
+.skill-note {{ font-size:13.5px; color:#6A7178; margin:0 0 12px; max-width:66ch; }}
+.skill-note a {{ color:var(--accent); }}
+.skill {{ background:var(--card); border:1px solid var(--line); padding:16px 18px;
+  overflow:auto; max-height:min(70vh, 720px); }}
+.skill pre {{ margin:0; font:12.5px/1.65 ui-monospace,"SF Mono",Consolas,monospace;
+  color:var(--ink); white-space:pre-wrap; word-break:break-word; }}
 .links {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
 .link {{ display:block; background:var(--card); border:1px solid var(--line); border-left:3px solid var(--accent);
   padding:14px 18px; text-decoration:none; }}
@@ -159,6 +178,7 @@ footer {{ margin-top:48px; padding-top:16px; border-top:1px solid var(--line);
   <p class="intro">{intro}</p>
 {features}
 {usage}
+{skill}
 {links}
   <footer>{footer}</footer>
 </div>
@@ -168,7 +188,7 @@ footer {{ margin-top:48px; padding-top:16px; border-top:1px solid var(--line);
 
 
 def _feature_cards(copy: dict) -> str:
-    """渲染「能做什么」的四张卡片"""
+    """渲染「能做什么」卡片网格"""
     cards = "\n".join(
         f'    <div class="card"><h3>{html.escape(t)}</h3><p>{html.escape(d)}</p></div>'
         for t, d in copy["features"]
@@ -197,6 +217,17 @@ def _link_cards(lang: str, copy: dict) -> str:
         for url, host, note_zh, note_en in LINKS
     )
     return f'  <h2>{html.escape(copy["links_title"])}</h2>\n  <div class="links">\n{cards}\n  </div>'
+
+
+def _skill_block(copy: dict) -> str:
+    """嵌入仓内 SKILL.md 原文（转义后进 <pre>），并链到 /skill.md"""
+    body = load_skill_markdown()
+    return (
+        f'  <h2 id="agent-skill">{html.escape(copy["skill_title"])}</h2>\n'
+        f'  <p class="skill-note">{html.escape(copy["skill_note"])} '
+        f'<a href="/skill.md">/skill.md</a></p>\n'
+        f'  <div class="skill"><pre>{html.escape(body)}</pre></div>'
+    )
 
 
 def render_landing_page(lang: str = "zh", service: str = "", version: str = "") -> str:
@@ -229,6 +260,7 @@ def render_landing_page(lang: str = "zh", service: str = "", version: str = "") 
         intro=html.escape(copy["intro"]),
         features=_feature_cards(copy),
         usage=_usage_blocks(copy),
+        skill=_skill_block(copy),
         links=_link_cards(lang, copy),
         footer=footer,
     )
